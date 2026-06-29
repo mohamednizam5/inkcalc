@@ -1,0 +1,1 @@
+ALTER TABLE `analysis_sessions` ADD `costParams` json;

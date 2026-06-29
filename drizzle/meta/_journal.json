@@ -1,0 +1,41 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1779660589518,
+      "tag": "0000_lively_morph",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1779660897715,
+      "tag": "0001_tidy_baron_zemo",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1779675459509,
+      "tag": "0002_handy_fixer",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1779683756153,
+      "tag": "0003_foamy_eddie_brock",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1779689644420,
+      "tag": "0004_broken_adam_warlock",
+      "breakpoints": true
+    }
+  ]
+}
