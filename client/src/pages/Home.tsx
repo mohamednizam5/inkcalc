@@ -797,7 +797,8 @@ export default function Home() {
                                                     key={pr.id}
                                                     onClick={() => handleSelectPrinter(pr.id, pr.model)}
                                                     disabled={getPresetByPrinter.isPending && selectedPrinterId === pr.id}
-                                                    className={`text-left px-3 py-2 rounded-lg border text-sm transition-all ${
+                                                    title={pr.model}
+                                                    className={`text-left px-3 py-2 rounded-lg border text-sm transition-all w-full ${
                                                       isSelected
                                                         ? "border-primary bg-primary/5 ring-1 ring-primary/30 font-semibold text-primary"
                                                         : "border-border hover:border-primary/40 hover:bg-muted/40"
@@ -808,9 +809,9 @@ export default function Home() {
                                                         <Loader2 className="w-3 h-3 animate-spin" /> Loading…
                                                       </span>
                                                     ) : (
-                                                      <span className="flex items-center justify-between gap-1">
-                                                        <span className="truncate">{pr.model}</span>
-                                                        {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-primary flex-shrink-0" />}
+                                                      <span className="flex items-start justify-between gap-1">
+                                                        <span className="break-words whitespace-normal leading-snug">{pr.model}</span>
+                                                        {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-primary flex-shrink-0 mt-0.5" />}
                                                       </span>
                                                     )}
                                                   </button>
