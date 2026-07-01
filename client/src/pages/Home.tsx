@@ -5,7 +5,7 @@ import {
   Upload, FileText, Settings, BarChart3, Download,
   ChevronRight, X, Lock, Unlock, Loader2, CheckCircle2,
   AlertCircle, Copy, ExternalLink, Sparkles, RefreshCw,
-  FileDown, FileArchive, Printer, Layers
+  FileDown, FileArchive, Printer, Layers, Share2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -18,6 +18,7 @@ import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { StepIndicator } from "@/components/StepIndicator";
 import { AddPrinterModal, EMPTY_CUSTOM_PRINTER, type CustomPrinterData } from "@/components/AddPrinterModal";
+import { ShareModal } from "@/components/ShareModal";
 import { InkAssistant } from "@/components/InkAssistant";
 import { CmykGroup } from "@/components/CmykBar";
 import { trpc } from "@/lib/trpc";
@@ -98,6 +99,7 @@ export default function Home() {
   const [printerSearch, setPrinterSearch] = useState<string>("");
   const [appliedTonerName, setAppliedTonerName] = useState<string | null>(null);
   const [showAddPrinterForm, setShowAddPrinterForm] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
   const [assistantMessage, setAssistantMessage] = useState<string>("Hey! I'm your Ink Assistant. Let's get started! Upload your PDF, JPEG, PNG, TIFF, EPS, or Word document to begin your ink coverage analysis.");
   const [showDownloadPrompt, setShowDownloadPrompt] = useState(false);
   const [customPrinter, setCustomPrinter] = useState<CustomPrinterData>({ ...EMPTY_CUSTOM_PRINTER });
@@ -391,6 +393,25 @@ export default function Home() {
       toast.error(err.message || "PDF export failed");
     } finally {
       setExportLoading(null);
+    }
+  };
+
+  // Returns the PDF as a Blob (used by ShareModal for native file sharing)
+  const getPdfBlob = async (): Promise<Blob | null> => {
+    if (!sessionId) return null;
+    try {
+      const result = await exportPdf.mutateAsync({ sessionId, params: costParams });
+      if (result.isDataUrl) {
+        const byteStr = atob(result.url.split(",")[1]);
+        const arr = new Uint8Array(byteStr.length);
+        for (let i = 0; i < byteStr.length; i++) arr[i] = byteStr.charCodeAt(i);
+        return new Blob([arr], { type: "application/pdf" });
+      } else {
+        const resp = await fetch(result.url);
+        return await resp.blob();
+      }
+    } catch {
+      return null;
     }
   };
 
@@ -1265,9 +1286,10 @@ export default function Home() {
               <div className="max-w-2xl mx-auto space-y-6">
                 <div className="text-center space-y-2">
                   <h2 className="text-3xl font-bold" style={{ fontFamily: "var(--font-display)" }}>Export & Share</h2>
-                  <p className="text-muted-foreground">Download your results or share a link with your team.</p>
+                  <p className="text-muted-foreground">Download your results or share them with anyone.</p>
                 </div>
 
+                {/* ── Download cards ── */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <Card className="card-lift cursor-pointer" onClick={handleExportCsv}>
                     <CardContent className="py-6 text-center space-y-3">
@@ -1311,42 +1333,45 @@ export default function Home() {
                   </Card>
                 </div>
 
-                {!isPrivateMode && shareToken && (
-                  <Card>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-base">Share Results</CardTitle>
-                      <CardDescription>Share a link to these results. Valid for 24 hours.</CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      <div className="flex gap-2">
-                        <Input
-                          readOnly
-                          value={shareUrl ?? `${window.location.origin}/share/${shareToken}`}
-                          className="font-mono text-xs"
-                        />
-                        <Button variant="outline" onClick={handleCopyShareLink}>
-                          <Copy className="w-4 h-4 mr-1.5" /> Copy
-                        </Button>
-                        <Button variant="outline" onClick={() => window.open(`/share/${shareToken}`, "_blank")}>
-                          <ExternalLink className="w-4 h-4" />
-                        </Button>
+                {/* ── Share Button ── */}
+                <Card className="border-2 border-blue-100 bg-gradient-to-br from-blue-50 to-slate-50">
+                  <CardContent className="py-5">
+                    <div className="flex flex-col sm:flex-row items-center gap-4">
+                      <div className="flex-1 text-center sm:text-left">
+                        <p className="font-semibold text-slate-800">Share via WhatsApp, Gmail, Telegram & more</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          On mobile, opens your phone's native share sheet with all installed apps
+                        </p>
                       </div>
-                      <p className="text-xs text-muted-foreground flex items-center gap-1.5">
-                        <Lock className="w-3 h-3" />
-                        Results are automatically deleted after 24 hours
-                      </p>
-                    </CardContent>
-                  </Card>
-                )}
+                      <Button
+                        className="gap-2 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white shadow-md shrink-0 px-6"
+                        onClick={() => setShowShareModal(true)}
+                      >
+                        <Share2 className="w-4 h-4" />
+                        Share Results
+                      </Button>
+                    </div>
+
+                    {/* App icons preview */}
+                    <div className="flex items-center gap-2 mt-4 flex-wrap">
+                      {["💬 WhatsApp", "✉️ Gmail", "✈️ Telegram", "📧 Outlook", "👥 Teams", "☁️ OneDrive", "📦 Dropbox"].map((app) => (
+                        <span key={app} className="text-xs bg-white border border-slate-200 rounded-full px-2.5 py-1 text-slate-600 shadow-sm">
+                          {app}
+                        </span>
+                      ))}
+                      <span className="text-xs text-muted-foreground">+ all apps on your phone</span>
+                    </div>
+                  </CardContent>
+                </Card>
 
                 {isPrivateMode && (
                   <Card className="border-amber-200 bg-amber-50/50">
                     <CardContent className="py-4">
                       <div className="flex items-center gap-2 text-amber-800">
                         <Lock className="w-4 h-4" />
-                        <p className="text-sm font-medium">Private Mode — Sharing disabled</p>
+                        <p className="text-sm font-medium">Private Mode — Link sharing disabled</p>
                       </div>
-                      <p className="text-xs text-amber-700 mt-1 ml-6">Your files were processed in-memory only and were never stored. Shareable links are not available in private mode.</p>
+                      <p className="text-xs text-amber-700 mt-1 ml-6">Your files were processed in-memory only. You can still share the PDF file directly via the Share button above.</p>
                     </CardContent>
                   </Card>
                 )}
@@ -1390,6 +1415,16 @@ export default function Home() {
         onSave={handleAddCustomPrinter}
         isSaving={addCustomPrinterMutation.isPending}
         initialBrand={activeBrand !== "Custom" ? activeBrand : ""}
+      />
+
+      {/* ── Share Modal ── */}
+      <ShareModal
+        open={showShareModal}
+        onClose={() => setShowShareModal(false)}
+        shareUrl={shareUrl ?? (!isPrivateMode && shareToken ? `${window.location.origin}/share/${shareToken}` : null)}
+        shareToken={shareToken}
+        onGetPdfBlob={getPdfBlob}
+        sessionId={sessionId ? String(sessionId) : null}
       />
 
       {/* ── Footer ── */}
