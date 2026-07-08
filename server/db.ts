@@ -183,6 +183,9 @@ export async function savePageAnalysis(data: {
   yCoverage: number;
   kCoverage: number;
   tac: number;
+  rCoverage?: number;
+  gCoverage?: number;
+  bCoverage?: number;
   totalPixels: number;
   inkPixels: number;
   thumbnailKey?: string;

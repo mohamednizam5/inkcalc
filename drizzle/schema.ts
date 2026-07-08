@@ -69,6 +69,10 @@ export const pageAnalyses = mysqlTable("page_analyses", {
   yCoverage: float("yCoverage").default(0),
   kCoverage: float("kCoverage").default(0),
   tac: float("tac").default(0), // Total Area Coverage
+  // RGB channel coverage (for RGB inkjet printers — only populated for RGB-mode files)
+  rCoverage: float("rCoverage").default(0),
+  gCoverage: float("gCoverage").default(0),
+  bCoverage: float("bCoverage").default(0),
   totalPixels: int("totalPixels").default(0),
   inkPixels: int("inkPixels").default(0),
   thumbnailKey: varchar("thumbnailKey", { length: 512 }),

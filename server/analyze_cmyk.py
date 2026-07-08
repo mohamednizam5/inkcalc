@@ -156,12 +156,21 @@ def analyze_image_rgb(image_path: str) -> dict:
     k_cov = float(np.mean(k) * 100)
     tac = c_cov + m_cov + y_cov + k_cov
 
+    # RGB channel coverage: mean ink density per channel (0=white/no ink, 100=full ink)
+    # For RGB inkjet printers — ink usage is proportional to (255 - channel) / 255
+    r_cov = float(np.mean((255.0 - r) / 255.0) * 100)
+    g_cov = float(np.mean((255.0 - g) / 255.0) * 100)
+    b_cov = float(np.mean((255.0 - b) / 255.0) * 100)
+
     return {
         "cCoverage": round(c_cov, 4),
         "mCoverage": round(m_cov, 4),
         "yCoverage": round(y_cov, 4),
         "kCoverage": round(k_cov, 4),
         "tac": round(tac, 4),
+        "rCoverage": round(r_cov, 4),
+        "gCoverage": round(g_cov, 4),
+        "bCoverage": round(b_cov, 4),
         "totalPixels": total_pixels,
         "inkPixels": ink_pixels,
         "analysisMode": "rgb_conversion",

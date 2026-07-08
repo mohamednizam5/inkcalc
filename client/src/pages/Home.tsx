@@ -46,7 +46,7 @@ interface CostParams {
   coveragePercent: number;
   pricePerMl?: number;
   mlPerCartridge?: number;
-  // Per-channel cartridge pricing
+  // Per-channel cartridge pricing (CMYK)
   cCartridgePrice?: number;
   cCartridgeYield?: number;
   mCartridgePrice?: number;
@@ -55,6 +55,14 @@ interface CostParams {
   yCartridgeYield?: number;
   kCartridgePrice?: number;
   kCartridgeYield?: number;
+  // RGB inkjet printer pricing
+  colorMode?: "cmyk" | "rgb";
+  rCartridgePrice?: number;
+  rCartridgeYield?: number;
+  gCartridgePrice?: number;
+  gCartridgeYield?: number;
+  bCartridgePrice?: number;
+  bCartridgeYield?: number;
   paperCostPerSheet: number;
   isDuplex: boolean;
   copies: number;
@@ -928,19 +936,52 @@ export default function Home() {
                 <Card>
                   <CardHeader className="pb-3">
                     <CardTitle className="text-base">Ink / Toner Pricing</CardTitle>
-                    <CardDescription>Enter pricing per CMYK colour cartridge, or use a single shared price as a fallback for all channels.</CardDescription>
+                    <CardDescription>
+                      {costParams.colorMode === "rgb"
+                        ? "RGB inkjet mode — enter pricing per Red, Green, and Blue ink cartridge."
+                        : "CMYK mode — enter pricing per Cyan, Magenta, Yellow, and Black cartridge."}
+                    </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-5">
 
-                    {/* Per-channel CMYK pricing */}
-                    <div className="space-y-3">
-                      <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Per-Colour Cartridge Pricing</p>
-                      {([
+                    {/* Color mode toggle */}
+                    <div className="flex items-center justify-between rounded-lg border p-3 bg-muted/30">
+                      <div>
+                        <p className="text-sm font-medium">Color Space / Ink Mode</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {costParams.colorMode === "rgb"
+                            ? "RGB — for photo inkjet printers with R/G/B ink tanks"
+                            : "CMYK — for standard laser/inkjet printers with C/M/Y/K cartridges"}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={cn("text-xs font-semibold", costParams.colorMode !== "rgb" ? "text-cyan-600" : "text-muted-foreground")}>CMYK</span>
+                        <Switch
+                          checked={costParams.colorMode === "rgb"}
+                          onCheckedChange={(v) => setCostParams((p) => ({ ...p, colorMode: v ? "rgb" : "cmyk" }))}
+                        />
+                        <span className={cn("text-xs font-semibold", costParams.colorMode === "rgb" ? "text-blue-600" : "text-muted-foreground")}>RGB</span>
+                      </div>
+                    </div>
+
+                    {/* Per-channel pricing rows — CMYK or RGB depending on mode */}
+                    {(() => {
+                      const rgbChannels = [
+                        { label: "Red",   color: "#ef4444", priceKey: "rCartridgePrice" as const, yieldKey: "rCartridgeYield" as const },
+                        { label: "Green", color: "#22c55e", priceKey: "gCartridgePrice" as const, yieldKey: "gCartridgeYield" as const },
+                        { label: "Blue",  color: "#3b82f6", priceKey: "bCartridgePrice" as const, yieldKey: "bCartridgeYield" as const },
+                      ];
+                      const cmykChannels = [
                         { label: "Cyan",    color: "#06b6d4", priceKey: "cCartridgePrice" as const, yieldKey: "cCartridgeYield" as const },
                         { label: "Magenta", color: "#ec4899", priceKey: "mCartridgePrice" as const, yieldKey: "mCartridgeYield" as const },
                         { label: "Yellow",  color: "#ca8a04", priceKey: "yCartridgePrice" as const, yieldKey: "yCartridgeYield" as const },
                         { label: "Black",   color: "#1f2937", priceKey: "kCartridgePrice" as const, yieldKey: "kCartridgeYield" as const },
-                      ]).map(({ label, color, priceKey, yieldKey }) => (
+                      ];
+                      const channels = costParams.colorMode === "rgb" ? rgbChannels : cmykChannels;
+                      return (
+                    <div className="space-y-3">
+                      <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Per-Colour Cartridge Pricing</p>
+                      {channels.map(({ label, color, priceKey, yieldKey }) => (
                         <div key={label} className="grid grid-cols-[auto_1fr_1fr] items-center gap-3">
                           <div className="flex items-center gap-2 w-24">
                             <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
@@ -967,7 +1008,15 @@ export default function Home() {
                         </div>
                       ))}
                     </div>
+                      );
+                    })()}
 
+                    {/* RGB info note */}
+                    {costParams.colorMode === "rgb" && (
+                      <div className="rounded-md bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 p-3 text-xs text-blue-700 dark:text-blue-300">
+                        <strong>RGB Mode:</strong> Coverage is calculated directly from the Red, Green, and Blue pixel channels of your image. Ink cost = (R coverage × R rate) + (G coverage × G rate) + (B coverage × B rate). Best suited for photo inkjet printers that use separate R/G/B ink tanks.
+                      </div>
+                    )}
 
                   </CardContent>
                 </Card>

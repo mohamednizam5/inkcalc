@@ -53,8 +53,13 @@ export interface CmykResult {
   yCoverage: number;
   kCoverage: number;
   tac: number;
+  // RGB channel coverage — only present when file was analyzed in RGB mode
+  rCoverage?: number;
+  gCoverage?: number;
+  bCoverage?: number;
   totalPixels: number;
   inkPixels: number;
+  analysisMode?: string;
 }
 
 export async function analyzeCmyk(
@@ -278,6 +283,17 @@ export interface CostParams {
   kCartridgePrice?: number;  // Black cartridge price
   kCartridgeYield?: number;
 
+  // ── RGB inkjet printer pricing ────────────────────────────────────────────
+  // Used when the printer uses R/G/B ink tanks (e.g. photo inkjet printers).
+  // When any RGB price is set, RGB cost columns are shown in results.
+  colorMode?: "cmyk" | "rgb";  // "cmyk" (default) or "rgb"
+  rCartridgePrice?: number;  // Red ink cartridge price
+  rCartridgeYield?: number;
+  gCartridgePrice?: number;  // Green ink cartridge price
+  gCartridgeYield?: number;
+  bCartridgePrice?: number;  // Blue ink cartridge price
+  bCartridgeYield?: number;
+
   paperCostPerSheet: number;
   isDuplex: boolean;
   copies: number;
@@ -295,9 +311,17 @@ export interface PageCostResult {
   mCost: number;
   yCost: number;
   kCost: number;
+  // RGB fields — only populated when colorMode === "rgb"
+  rCoverage?: number;
+  gCoverage?: number;
+  bCoverage?: number;
+  rCost?: number;
+  gCost?: number;
+  bCost?: number;
   inkCostPerPage: number;
   paperCostPerPage: number;
   totalCostPerPage: number;
+  colorMode?: "cmyk" | "rgb";
 }
 
 export function computeCosts(
@@ -310,6 +334,9 @@ export function computeCosts(
     yCoverage: number | null;
     kCoverage: number | null;
     tac: number | null;
+    rCoverage?: number | null;
+    gCoverage?: number | null;
+    bCoverage?: number | null;
   }>,
   params: CostParams
 ): {
@@ -319,6 +346,7 @@ export function computeCosts(
   totalCost: number;
   costPerCopy: number;
   perChannel: { channel: string; avgCoverage: number; cost: number }[];
+  colorMode: "cmyk" | "rgb";
 } {
   const {
     pricePerCartridge, yieldPages, coveragePercent = 5,
@@ -327,8 +355,13 @@ export function computeCosts(
     mCartridgePrice, mCartridgeYield,
     yCartridgePrice, yCartridgeYield,
     kCartridgePrice, kCartridgeYield,
+    rCartridgePrice, rCartridgeYield,
+    gCartridgePrice, gCartridgeYield,
+    bCartridgePrice, bCartridgeYield,
     isDuplex, copies,
   } = params;
+
+  const colorMode: "cmyk" | "rgb" = params.colorMode ?? "cmyk";
 
   // Sanitize: replace NaN / Infinity / negative with safe defaults
   const safe = (v: number | undefined, fallback = 0): number =>
@@ -368,6 +401,11 @@ export function computeCosts(
   const yRate = channelCostPer1Pct(yCartridgePrice, yCartridgeYield);
   const kRate = channelCostPer1Pct(kCartridgePrice, kCartridgeYield);
 
+  // RGB rates — only used when colorMode === "rgb"
+  const rRate = channelCostPer1Pct(rCartridgePrice, rCartridgeYield);
+  const gRate = channelCostPer1Pct(gCartridgePrice, gCartridgeYield);
+  const bRate = channelCostPer1Pct(bCartridgePrice, bCartridgeYield);
+
   const duplexFactor = isDuplex ? 0.5 : 1;
 
   const perPage: PageCostResult[] = pages.map((p) => {
@@ -381,7 +419,19 @@ export function computeCosts(
     const mCost = safe(m * mRate);
     const yCost = safe(y * yRate);
     const kCost = safe(k * kRate);
-    const inkCostPerPage = safe(cCost + mCost + yCost + kCost);
+
+    // RGB costs — computed from rCoverage/gCoverage/bCoverage when in RGB mode
+    const r = safe(p.rCoverage ?? 0);
+    const g = safe(p.gCoverage ?? 0);
+    const b = safe(p.bCoverage ?? 0);
+    const rCost = colorMode === "rgb" ? safe(r * rRate) : undefined;
+    const gCost = colorMode === "rgb" ? safe(g * gRate) : undefined;
+    const bCost = colorMode === "rgb" ? safe(b * bRate) : undefined;
+
+    // In RGB mode, ink cost is based on R/G/B channels; in CMYK mode, use C/M/Y/K
+    const inkCostPerPage = colorMode === "rgb"
+      ? safe((rCost ?? 0) + (gCost ?? 0) + (bCost ?? 0))
+      : safe(cCost + mCost + yCost + kCost);
     const paperCostPerPage = safe(paperCostPerSheet * duplexFactor);
     const totalCostPerPage = safe(inkCostPerPage + paperCostPerPage);
 
@@ -397,9 +447,17 @@ export function computeCosts(
       mCost,
       yCost,
       kCost,
+      // RGB fields
+      rCoverage: colorMode === "rgb" ? r : undefined,
+      gCoverage: colorMode === "rgb" ? g : undefined,
+      bCoverage: colorMode === "rgb" ? b : undefined,
+      rCost,
+      gCost,
+      bCost,
       inkCostPerPage,
       paperCostPerPage,
       totalCostPerPage,
+      colorMode,
     };
   });
 
@@ -409,12 +467,18 @@ export function computeCosts(
   const costPerCopy = perPage.reduce((s, p) => s + p.totalCostPerPage, 0);
 
   const n = pages.length || 1;
-  const perChannel = [
-    { channel: "Cyan",    avgCoverage: perPage.reduce((s, p) => s + p.cCoverage, 0) / n, cost: perPage.reduce((s, p) => s + (p.cCost ?? 0), 0) * copies },
-    { channel: "Magenta", avgCoverage: perPage.reduce((s, p) => s + p.mCoverage, 0) / n, cost: perPage.reduce((s, p) => s + (p.mCost ?? 0), 0) * copies },
-    { channel: "Yellow",  avgCoverage: perPage.reduce((s, p) => s + p.yCoverage, 0) / n, cost: perPage.reduce((s, p) => s + (p.yCost ?? 0), 0) * copies },
-    { channel: "Black",   avgCoverage: perPage.reduce((s, p) => s + p.kCoverage, 0) / n, cost: perPage.reduce((s, p) => s + (p.kCost ?? 0), 0) * copies },
-  ];
+  const perChannel = colorMode === "rgb"
+    ? [
+        { channel: "Red",   avgCoverage: perPage.reduce((s, p) => s + (p.rCoverage ?? 0), 0) / n, cost: perPage.reduce((s, p) => s + (p.rCost ?? 0), 0) * safeCopies },
+        { channel: "Green", avgCoverage: perPage.reduce((s, p) => s + (p.gCoverage ?? 0), 0) / n, cost: perPage.reduce((s, p) => s + (p.gCost ?? 0), 0) * safeCopies },
+        { channel: "Blue",  avgCoverage: perPage.reduce((s, p) => s + (p.bCoverage ?? 0), 0) / n, cost: perPage.reduce((s, p) => s + (p.bCost ?? 0), 0) * safeCopies },
+      ]
+    : [
+        { channel: "Cyan",    avgCoverage: perPage.reduce((s, p) => s + p.cCoverage, 0) / n, cost: perPage.reduce((s, p) => s + (p.cCost ?? 0), 0) * safeCopies },
+        { channel: "Magenta", avgCoverage: perPage.reduce((s, p) => s + p.mCoverage, 0) / n, cost: perPage.reduce((s, p) => s + (p.mCost ?? 0), 0) * safeCopies },
+        { channel: "Yellow",  avgCoverage: perPage.reduce((s, p) => s + p.yCoverage, 0) / n, cost: perPage.reduce((s, p) => s + (p.yCost ?? 0), 0) * safeCopies },
+        { channel: "Black",   avgCoverage: perPage.reduce((s, p) => s + p.kCoverage, 0) / n, cost: perPage.reduce((s, p) => s + (p.kCost ?? 0), 0) * safeCopies },
+      ];
 
-  return { perPage, totalInkCost, totalPaperCost, totalCost, costPerCopy, perChannel };
+  return { perPage, totalInkCost, totalPaperCost, totalCost, costPerCopy, perChannel, colorMode };
 }

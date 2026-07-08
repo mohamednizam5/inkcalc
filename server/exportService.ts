@@ -77,9 +77,33 @@ export function generateCsv(
   costResults?: PageCostResult[]
 ): string {
   const fileMap = new Map(files.map((f) => [f.id, f.filename]));
+  const isRgbMode = costResults?.some((c) => c.colorMode === "rgb") ?? false;
 
   const rows = pages.map((p) => {
     const cost = costResults?.find((c) => c.fileId === p.fileId && c.pageNumber === p.pageNumber);
+    if (isRgbMode) {
+      return {
+        File: fileMap.get(p.fileId) ?? `File ${p.fileId}`,
+        Page: p.pageNumber,
+        // CMYK coverage (from RGB→CMYK conversion)
+        "Cyan Coverage (%)": (p.cCoverage ?? 0).toFixed(4),
+        "Magenta Coverage (%)": (p.mCoverage ?? 0).toFixed(4),
+        "Yellow Coverage (%)": (p.yCoverage ?? 0).toFixed(4),
+        "Black Coverage (%)": (p.kCoverage ?? 0).toFixed(4),
+        "TAC (%)": (p.tac ?? 0).toFixed(4),
+        // RGB channel coverage
+        "Red Coverage (%)": cost?.rCoverage != null ? cost.rCoverage.toFixed(4) : (p as any).rCoverage != null ? ((p as any).rCoverage).toFixed(4) : "",
+        "Green Coverage (%)": cost?.gCoverage != null ? cost.gCoverage.toFixed(4) : (p as any).gCoverage != null ? ((p as any).gCoverage).toFixed(4) : "",
+        "Blue Coverage (%)": cost?.bCoverage != null ? cost.bCoverage.toFixed(4) : (p as any).bCoverage != null ? ((p as any).bCoverage).toFixed(4) : "",
+        // RGB ink costs
+        "Red Ink Cost ($)": cost ? (cost.rCost ?? 0).toFixed(4) : "",
+        "Green Ink Cost ($)": cost ? (cost.gCost ?? 0).toFixed(4) : "",
+        "Blue Ink Cost ($)": cost ? (cost.bCost ?? 0).toFixed(4) : "",
+        "Total Ink Cost ($)": cost ? cost.inkCostPerPage.toFixed(4) : "",
+        "Paper Cost ($)": cost ? cost.paperCostPerPage.toFixed(4) : "",
+        "Total Cost ($)": cost ? cost.totalCostPerPage.toFixed(4) : "",
+      };
+    }
     return {
       File: fileMap.get(p.fileId) ?? `File ${p.fileId}`,
       Page: p.pageNumber,
@@ -370,8 +394,25 @@ export async function generatePdfReport(options: {
   hLine(y + 4);
   y -= 6;
 
-  // Column layout: File/Page | C% | M% | Y% | K% | TAC% | C$ | M$ | Y$ | K$ | Paper$ | Total$
-  const COL = {
+  // Detect RGB mode from costResults
+  const isRgbMode = costResults?.some((c) => c.colorMode === "rgb") ?? false;
+
+  // Column layout: CMYK mode: File/Page | C% | M% | Y% | K% | TAC% | C$ | M$ | Y$ | K$ | Paper$ | Total$
+  //               RGB mode:  File/Page | R% | G% | B% | TAC% | R$ | G$ | B$ | Paper$ | Total$
+  const COL = isRgbMode ? {
+    file:   MARGIN,
+    r:      MARGIN + 115,
+    g:      MARGIN + 155,
+    b:      MARGIN + 195,
+    tac:    MARGIN + 235,
+    rCost:  MARGIN + 278,
+    gCost:  MARGIN + 330,
+    bCost:  MARGIN + 382,
+    paper:  MARGIN + 420,
+    total:  MARGIN + 460,
+    // unused in RGB mode
+    c: 0, m: 0, yy: 0, k: 0, cCost: 0, mCost: 0, yCost: 0, kCost: 0,
+  } : {
     file:   MARGIN,
     c:      MARGIN + 110,
     m:      MARGIN + 143,
@@ -384,12 +425,25 @@ export async function generatePdfReport(options: {
     kCost:  MARGIN + 383,
     paper:  MARGIN + 418,
     total:  MARGIN + 458,
+    // unused in CMYK mode
+    r: 0, g: 0, b: 0, rCost: 0, gCost: 0, bCost: 0,
   };
 
   // Table header
   const TH_H = 16;
   rect(MARGIN, y - TH_H, CONTENT_W, TH_H, C_NAVY);
-  const headers: Array<[string, number]> = [
+  const headers: Array<[string, number]> = isRgbMode ? [
+    ["File / Page", COL.file],
+    ["R%",    COL.r],
+    ["G%",    COL.g],
+    ["B%",    COL.b],
+    ["TAC%",  COL.tac],
+    ["R $",   COL.rCost],
+    ["G $",   COL.gCost],
+    ["B $",   COL.bCost],
+    ["Paper$",COL.paper],
+    ["Total$",COL.total],
+  ] : [
     ["File / Page", COL.file],
     ["C%",    COL.c],
     ["M%",    COL.m],
@@ -406,6 +460,10 @@ export async function generatePdfReport(options: {
   headers.forEach(([h, x]) => text(h, x + 2, y - TH_H + 5, { size: 6.5, bold: true, color: C_WHITE }));
   y -= TH_H + 2;
 
+  const C_RED   = rgb(0.94, 0.27, 0.27);
+  const C_GREEN = rgb(0.13, 0.77, 0.37);
+  const C_BLUE  = rgb(0.23, 0.51, 0.96);
+
   let rowIdx = 0;
   for (const p of pages) {
     ensureSpace(14);
@@ -416,7 +474,18 @@ export async function generatePdfReport(options: {
     const cost = costResults?.find((c) => c.fileId === p.fileId && c.pageNumber === p.pageNumber);
     const fileName = (fileMap.get(p.fileId) ?? `File ${p.fileId}`).replace(/\.[^.]+$/, "").substring(0, 14);
 
-    const rowData: Array<[string, number, RGB?]> = [
+    const rowData: Array<[string, number, RGB?]> = isRgbMode ? [
+      [`${fileName} / p${p.pageNumber}`, COL.file],
+      [(cost?.rCoverage ?? 0).toFixed(1), COL.r, C_RED],
+      [(cost?.gCoverage ?? 0).toFixed(1), COL.g, C_GREEN],
+      [(cost?.bCoverage ?? 0).toFixed(1), COL.b, C_BLUE],
+      [(p.tac ?? 0).toFixed(1),           COL.tac, C_ACCENT],
+      [cost ? `$${(cost.rCost ?? 0).toFixed(3)}` : "—", COL.rCost, C_RED],
+      [cost ? `$${(cost.gCost ?? 0).toFixed(3)}` : "—", COL.gCost, C_GREEN],
+      [cost ? `$${(cost.bCost ?? 0).toFixed(3)}` : "—", COL.bCost, C_BLUE],
+      [cost ? `$${cost.paperCostPerPage.toFixed(3)}` : "—", COL.paper],
+      [cost ? `$${cost.totalCostPerPage.toFixed(3)}` : "—", COL.total, C_ACCENT],
+    ] : [
       [`${fileName} / p${p.pageNumber}`, COL.file],
       [(p.cCoverage ?? 0).toFixed(1), COL.c,  C_CYAN],
       [(p.mCoverage ?? 0).toFixed(1), COL.m,  C_MAGENTA],
@@ -446,19 +515,29 @@ export async function generatePdfReport(options: {
   // ── Totals row (if cost data present) ────────────────────────────────────────
   if (costResults && costResults.length > 0) {
     ensureSpace(18);
-    const totalCCost  = costResults.reduce((s, r) => s + (r.cCost ?? 0), 0);
-    const totalMCost  = costResults.reduce((s, r) => s + (r.mCost ?? 0), 0);
-    const totalYCost  = costResults.reduce((s, r) => s + (r.yCost ?? 0), 0);
-    const totalKCost  = costResults.reduce((s, r) => s + (r.kCost ?? 0), 0);
     const totalPaper  = costResults.reduce((s, r) => s + r.paperCostPerPage, 0);
     const grandTotal  = costResults.reduce((s, r) => s + r.totalCostPerPage, 0);
 
     rect(MARGIN, y - 16, CONTENT_W, 16, C_LIGHT, C_BORDER);
     text("TOTALS", COL.file + 2, y - 11, { size: 6.5, bold: true });
-    text(`$${totalCCost.toFixed(3)}`,  COL.cCost + 2, y - 11, { size: 6.5, bold: true, color: C_CYAN });
-    text(`$${totalMCost.toFixed(3)}`,  COL.mCost + 2, y - 11, { size: 6.5, bold: true, color: C_MAGENTA });
-    text(`$${totalYCost.toFixed(3)}`,  COL.yCost + 2, y - 11, { size: 6.5, bold: true, color: rgb(0.65, 0.50, 0.02) });
-    text(`$${totalKCost.toFixed(3)}`,  COL.kCost + 2, y - 11, { size: 6.5, bold: true, color: C_BLACK });
+
+    if (isRgbMode) {
+      const totalRCost = costResults.reduce((s, r) => s + (r.rCost ?? 0), 0);
+      const totalGCost = costResults.reduce((s, r) => s + (r.gCost ?? 0), 0);
+      const totalBCost = costResults.reduce((s, r) => s + (r.bCost ?? 0), 0);
+      text(`$${totalRCost.toFixed(3)}`, COL.rCost + 2, y - 11, { size: 6.5, bold: true, color: C_RED });
+      text(`$${totalGCost.toFixed(3)}`, COL.gCost + 2, y - 11, { size: 6.5, bold: true, color: C_GREEN });
+      text(`$${totalBCost.toFixed(3)}`, COL.bCost + 2, y - 11, { size: 6.5, bold: true, color: C_BLUE });
+    } else {
+      const totalCCost  = costResults.reduce((s, r) => s + (r.cCost ?? 0), 0);
+      const totalMCost  = costResults.reduce((s, r) => s + (r.mCost ?? 0), 0);
+      const totalYCost  = costResults.reduce((s, r) => s + (r.yCost ?? 0), 0);
+      const totalKCost  = costResults.reduce((s, r) => s + (r.kCost ?? 0), 0);
+      text(`$${totalCCost.toFixed(3)}`,  COL.cCost + 2, y - 11, { size: 6.5, bold: true, color: C_CYAN });
+      text(`$${totalMCost.toFixed(3)}`,  COL.mCost + 2, y - 11, { size: 6.5, bold: true, color: C_MAGENTA });
+      text(`$${totalYCost.toFixed(3)}`,  COL.yCost + 2, y - 11, { size: 6.5, bold: true, color: rgb(0.65, 0.50, 0.02) });
+      text(`$${totalKCost.toFixed(3)}`,  COL.kCost + 2, y - 11, { size: 6.5, bold: true, color: C_BLACK });
+    }
     text(`$${totalPaper.toFixed(3)}`,  COL.paper + 2, y - 11, { size: 6.5, bold: true, color: C_ACCENT });
     text(`$${grandTotal.toFixed(3)}`,  COL.total + 2, y - 11, { size: 6.5, bold: true, color: C_ACCENT });
     y -= 24;
