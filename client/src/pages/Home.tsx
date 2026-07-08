@@ -987,7 +987,7 @@ export default function Home() {
                           min="0"
                           step="0.001"
                           value={costParams.paperCostPerSheet}
-                          onChange={(e) => setCostParams((p) => ({ ...p, paperCostPerSheet: +e.target.value }))}
+                          onChange={(e) => { const v = parseFloat(e.target.value); setCostParams((p) => ({ ...p, paperCostPerSheet: isNaN(v) || v < 0 ? 0 : v })); }}
                         />
                       </div>
                       <div className="space-y-1.5">
@@ -997,7 +997,7 @@ export default function Home() {
                           type="number"
                           min="1"
                           value={costParams.copies}
-                          onChange={(e) => setCostParams((p) => ({ ...p, copies: Math.max(1, +e.target.value) }))}
+                          onChange={(e) => { const v = parseInt(e.target.value, 10); setCostParams((p) => ({ ...p, copies: isNaN(v) || v < 1 ? 1 : v })); }}
                         />
                       </div>
                       <div className="space-y-1.5">
@@ -1061,7 +1061,7 @@ export default function Home() {
                     <div className="text-center sm:text-left">
                       <p className="text-sm font-medium text-slate-400 uppercase tracking-widest mb-1">Total Job Cost</p>
                       <p className="text-5xl font-extrabold font-mono tabular-nums tracking-tight">
-                        ${costResults.totalCost.toFixed(4)}
+                        ${(isNaN(costResults.totalCost) ? 0 : costResults.totalCost).toFixed(4)}
                       </p>
                       <p className="text-sm text-slate-400 mt-1">
                         {costParams.copies} cop{costParams.copies !== 1 ? "ies" : "y"} &nbsp;·&nbsp; {costResults.perPage?.length ?? 0} page{(costResults.perPage?.length ?? 0) !== 1 ? "s" : ""}
@@ -1072,17 +1072,17 @@ export default function Home() {
                     <div className="flex gap-6 sm:gap-8">
                       <div className="text-center">
                         <p className="text-xs text-slate-400 uppercase tracking-wide mb-0.5">Cost / Copy</p>
-                        <p className="text-2xl font-bold font-mono tabular-nums">${costResults.costPerCopy.toFixed(4)}</p>
+                        <p className="text-2xl font-bold font-mono tabular-nums">${(isNaN(costResults.costPerCopy) ? 0 : costResults.costPerCopy).toFixed(4)}</p>
                       </div>
                       <div className="w-px bg-slate-700 hidden sm:block" />
                       <div className="text-center">
                         <p className="text-xs text-slate-400 uppercase tracking-wide mb-0.5">Ink</p>
-                        <p className="text-2xl font-bold font-mono tabular-nums text-cyan-400">${costResults.totalInkCost.toFixed(4)}</p>
+                        <p className="text-2xl font-bold font-mono tabular-nums text-cyan-400">${(isNaN(costResults.totalInkCost) ? 0 : costResults.totalInkCost).toFixed(4)}</p>
                       </div>
                       <div className="w-px bg-slate-700 hidden sm:block" />
                       <div className="text-center">
                         <p className="text-xs text-slate-400 uppercase tracking-wide mb-0.5">Paper</p>
-                        <p className="text-2xl font-bold font-mono tabular-nums text-emerald-400">${costResults.totalPaperCost.toFixed(4)}</p>
+                        <p className="text-2xl font-bold font-mono tabular-nums text-emerald-400">${(isNaN(costResults.totalPaperCost) ? 0 : costResults.totalPaperCost).toFixed(4)}</p>
                       </div>
                     </div>
                   </div>
@@ -1257,7 +1257,7 @@ export default function Home() {
                               <td className="py-2 px-2 text-right font-mono text-yellow-600">{row.yCoverage.toFixed(2)}</td>
                               <td className="py-2 px-2 text-right font-mono text-gray-700">{row.kCoverage.toFixed(2)}</td>
                               <td className="py-2 px-2 text-right font-mono font-semibold">{row.tac.toFixed(2)}</td>
-                              <td className="py-2 px-2 pr-4 text-right font-mono font-semibold">${row.totalCostPerPage.toFixed(4)}</td>
+                              <td className="py-2 px-2 pr-4 text-right font-mono font-semibold">${(isNaN(row.totalCostPerPage) ? 0 : row.totalCostPerPage).toFixed(4)}</td>
                             </tr>
                           );
                         })}

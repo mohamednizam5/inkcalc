@@ -327,8 +327,18 @@ export function computeCosts(
     mCartridgePrice, mCartridgeYield,
     yCartridgePrice, yCartridgeYield,
     kCartridgePrice, kCartridgeYield,
-    paperCostPerSheet, isDuplex, copies,
+    isDuplex, copies,
   } = params;
+
+  // Sanitize: replace NaN / Infinity / negative with safe defaults
+  const safe = (v: number | undefined, fallback = 0): number =>
+    v === undefined || !Number.isFinite(v) || v < 0 ? fallback : v;
+  const paperCostPerSheet = safe(params.paperCostPerSheet, 0.01);
+  // coveragePercent must be > 0 to avoid division by zero
+  const safeCoverage = (coveragePercent && Number.isFinite(coveragePercent) && coveragePercent > 0)
+    ? coveragePercent : 5;
+  const safeCopies = (copies && Number.isFinite(copies) && copies >= 1)
+    ? Math.round(copies) : 1;
 
   // Helper: cost per 1% coverage for a single channel
   // Uses per-channel price if provided, falls back to shared price, then per-mL.
@@ -336,14 +346,19 @@ export function computeCosts(
     chPrice: number | undefined,
     chYield: number | undefined
   ): number => {
-    if (chPrice && chYield && chYield > 0) {
-      return chPrice / (chYield * coveragePercent);
+    const p = safe(chPrice);
+    const y = safe(chYield);
+    if (p > 0 && y > 0) {
+      return p / (y * safeCoverage);
     }
-    if (pricePerCartridge && yieldPages && yieldPages > 0) {
-      return pricePerCartridge / (yieldPages * coveragePercent);
+    const sp = safe(pricePerCartridge);
+    const sy = safe(yieldPages);
+    if (sp > 0 && sy > 0) {
+      return sp / (sy * safeCoverage);
     }
-    if (pricePerMl) {
-      return pricePerMl * 0.01;
+    const ml = safe(pricePerMl);
+    if (ml > 0) {
+      return ml * 0.01;
     }
     return 0;
   };
@@ -356,19 +371,19 @@ export function computeCosts(
   const duplexFactor = isDuplex ? 0.5 : 1;
 
   const perPage: PageCostResult[] = pages.map((p) => {
-    const c = p.cCoverage ?? 0;
-    const m = p.mCoverage ?? 0;
-    const y = p.yCoverage ?? 0;
-    const k = p.kCoverage ?? 0;
-    const tac = p.tac ?? (c + m + y + k);
+    const c = safe(p.cCoverage ?? 0);
+    const m = safe(p.mCoverage ?? 0);
+    const y = safe(p.yCoverage ?? 0);
+    const k = safe(p.kCoverage ?? 0);
+    const tac = safe(p.tac ?? (c + m + y + k));
 
-    const cCost = c * cRate;
-    const mCost = m * mRate;
-    const yCost = y * yRate;
-    const kCost = k * kRate;
-    const inkCostPerPage = cCost + mCost + yCost + kCost;
-    const paperCostPerPage = paperCostPerSheet * duplexFactor;
-    const totalCostPerPage = inkCostPerPage + paperCostPerPage;
+    const cCost = safe(c * cRate);
+    const mCost = safe(m * mRate);
+    const yCost = safe(y * yRate);
+    const kCost = safe(k * kRate);
+    const inkCostPerPage = safe(cCost + mCost + yCost + kCost);
+    const paperCostPerPage = safe(paperCostPerSheet * duplexFactor);
+    const totalCostPerPage = safe(inkCostPerPage + paperCostPerPage);
 
     return {
       pageNumber: p.pageNumber,
@@ -388,8 +403,8 @@ export function computeCosts(
     };
   });
 
-  const totalInkCost = perPage.reduce((s, p) => s + p.inkCostPerPage, 0) * copies;
-  const totalPaperCost = perPage.reduce((s, p) => s + p.paperCostPerPage, 0) * copies;
+  const totalInkCost = perPage.reduce((s, p) => s + p.inkCostPerPage, 0) * safeCopies;
+  const totalPaperCost = perPage.reduce((s, p) => s + p.paperCostPerPage, 0) * safeCopies;
   const totalCost = totalInkCost + totalPaperCost;
   const costPerCopy = perPage.reduce((s, p) => s + p.totalCostPerPage, 0);
 
