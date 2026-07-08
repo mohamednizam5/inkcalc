@@ -1054,6 +1054,64 @@ export default function Home() {
                   <p className="text-muted-foreground">Detailed ink coverage and cost breakdown for your print job.</p>
                 </div>
 
+                {/* ── Total Cost Hero Banner ── */}
+                <div className="rounded-2xl bg-gradient-to-br from-slate-900 to-slate-800 text-white px-6 py-6 shadow-lg">
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
+                    {/* Main total */}
+                    <div className="text-center sm:text-left">
+                      <p className="text-sm font-medium text-slate-400 uppercase tracking-widest mb-1">Total Job Cost</p>
+                      <p className="text-5xl font-extrabold font-mono tabular-nums tracking-tight">
+                        ${costResults.totalCost.toFixed(4)}
+                      </p>
+                      <p className="text-sm text-slate-400 mt-1">
+                        {costParams.copies} cop{costParams.copies !== 1 ? "ies" : "y"} &nbsp;·&nbsp; {costResults.perPage?.length ?? 0} page{(costResults.perPage?.length ?? 0) !== 1 ? "s" : ""}
+                      </p>
+                    </div>
+
+                    {/* Sub-totals */}
+                    <div className="flex gap-6 sm:gap-8">
+                      <div className="text-center">
+                        <p className="text-xs text-slate-400 uppercase tracking-wide mb-0.5">Cost / Copy</p>
+                        <p className="text-2xl font-bold font-mono tabular-nums">${costResults.costPerCopy.toFixed(4)}</p>
+                      </div>
+                      <div className="w-px bg-slate-700 hidden sm:block" />
+                      <div className="text-center">
+                        <p className="text-xs text-slate-400 uppercase tracking-wide mb-0.5">Ink</p>
+                        <p className="text-2xl font-bold font-mono tabular-nums text-cyan-400">${costResults.totalInkCost.toFixed(4)}</p>
+                      </div>
+                      <div className="w-px bg-slate-700 hidden sm:block" />
+                      <div className="text-center">
+                        <p className="text-xs text-slate-400 uppercase tracking-wide mb-0.5">Paper</p>
+                        <p className="text-2xl font-bold font-mono tabular-nums text-emerald-400">${costResults.totalPaperCost.toFixed(4)}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Cost bar */}
+                  {costResults.totalCost > 0 && (
+                    <div className="mt-5">
+                      <div className="flex justify-between text-xs text-slate-400 mb-1.5">
+                        <span>Ink share</span>
+                        <span>Paper share</span>
+                      </div>
+                      <div className="h-2.5 rounded-full bg-slate-700 overflow-hidden flex">
+                        <div
+                          className="h-full bg-gradient-to-r from-cyan-500 to-cyan-400 rounded-l-full transition-all"
+                          style={{ width: `${Math.round((costResults.totalInkCost / costResults.totalCost) * 100)}%` }}
+                        />
+                        <div
+                          className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-r-full transition-all"
+                          style={{ width: `${Math.round((costResults.totalPaperCost / costResults.totalCost) * 100)}%` }}
+                        />
+                      </div>
+                      <div className="flex justify-between text-xs text-slate-400 mt-1.5">
+                        <span className="text-cyan-400">{Math.round((costResults.totalInkCost / costResults.totalCost) * 100)}%</span>
+                        <span className="text-emerald-400">{Math.round((costResults.totalPaperCost / costResults.totalCost) * 100)}%</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 {/* ── PDF Download Banner ── */}
                 <div className="flex items-center justify-between gap-4 rounded-xl border border-red-200 bg-red-50/60 px-5 py-4">
                   <div className="flex items-center gap-3">
