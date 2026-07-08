@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
-  Copy, ExternalLink, Download, Share2, Mail, Loader2, CheckCircle2
+  Copy, ExternalLink, Download, Share2, Loader2, CheckCircle2, CloudUpload
 } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -28,21 +28,32 @@ function isNativeShareSupported(): boolean {
 }
 
 function isFileShareSupported(): boolean {
-  return (
-    typeof navigator !== "undefined" &&
-    !!navigator.canShare &&
-    navigator.canShare({ files: [new File([""], "test.pdf", { type: "application/pdf" })] })
-  );
+  try {
+    return (
+      typeof navigator !== "undefined" &&
+      !!navigator.canShare &&
+      navigator.canShare({ files: [new File([""], "test.pdf", { type: "application/pdf" })] })
+    );
+  } catch {
+    return false;
+  }
 }
 
 // ─── Share Apps Config ───────────────────────────────────────────────────────
+
+type AppAction = "open_url" | "download_then_upload" | "download_pdf";
 
 interface ShareApp {
   id: string;
   label: string;
   color: string;
-  icon: string; // emoji or SVG path
-  getUrl: (url: string, text: string) => string;
+  icon: string;
+  action: AppAction;
+  /** For action=open_url: returns the URL to open */
+  getUrl?: (url: string, text: string) => string;
+  /** For action=download_then_upload: the service URL to open after download */
+  uploadUrl?: string;
+  uploadHint?: string;
 }
 
 const SHARE_APPS: ShareApp[] = [
@@ -51,30 +62,34 @@ const SHARE_APPS: ShareApp[] = [
     label: "WhatsApp",
     color: "#25D366",
     icon: "💬",
+    action: "open_url",
     getUrl: (url, text) =>
       `https://wa.me/?text=${encodeURIComponent(text + "\n" + url)}`,
-  },
-  {
-    id: "gmail",
-    label: "Gmail",
-    color: "#EA4335",
-    icon: "✉️",
-    getUrl: (url, text) =>
-      `https://mail.google.com/mail/?view=cm&su=${encodeURIComponent("Ink Coverage Report")}&body=${encodeURIComponent(text + "\n\n" + url)}`,
   },
   {
     id: "telegram",
     label: "Telegram",
     color: "#2CA5E0",
     icon: "✈️",
+    action: "open_url",
     getUrl: (url, text) =>
       `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`,
+  },
+  {
+    id: "gmail",
+    label: "Gmail",
+    color: "#EA4335",
+    icon: "✉️",
+    action: "open_url",
+    getUrl: (url, text) =>
+      `https://mail.google.com/mail/?view=cm&su=${encodeURIComponent("Ink Coverage Report")}&body=${encodeURIComponent(text + "\n\n" + url)}`,
   },
   {
     id: "outlook",
     label: "Outlook",
     color: "#0078D4",
     icon: "📧",
+    action: "open_url",
     getUrl: (url, text) =>
       `https://outlook.live.com/mail/0/deeplink/compose?subject=${encodeURIComponent("Ink Coverage Report")}&body=${encodeURIComponent(text + "\n\n" + url)}`,
   },
@@ -83,28 +98,35 @@ const SHARE_APPS: ShareApp[] = [
     label: "Teams",
     color: "#6264A7",
     icon: "👥",
-    getUrl: (url, _text) =>
-      `https://teams.microsoft.com/share?href=${encodeURIComponent(url)}`,
+    action: "open_url",
+    // Teams share dialog — works for web links
+    getUrl: (url, text) =>
+      `https://teams.microsoft.com/share?href=${encodeURIComponent(url)}&msgText=${encodeURIComponent(text)}`,
   },
   {
     id: "onedrive",
     label: "OneDrive",
     color: "#0078D4",
     icon: "☁️",
-    getUrl: (_url, _text) => "onedrive",  // handled specially — file upload
+    action: "download_then_upload",
+    uploadUrl: "https://onedrive.live.com/upload",
+    uploadHint: "PDF saved to Downloads — open OneDrive and tap Upload to add it.",
   },
   {
     id: "dropbox",
     label: "Dropbox",
     color: "#0061FF",
     icon: "📦",
-    getUrl: (_url, _text) => "dropbox",  // handled specially — file upload
+    action: "download_then_upload",
+    uploadUrl: "https://www.dropbox.com/upload",
+    uploadHint: "PDF saved to Downloads — open Dropbox and tap Upload to add it.",
   },
   {
     id: "email",
     label: "Email",
     color: "#6B7280",
     icon: "📨",
+    action: "open_url",
     getUrl: (url, text) =>
       `mailto:?subject=${encodeURIComponent("Ink Coverage Report")}&body=${encodeURIComponent(text + "\n\n" + url)}`,
   },
@@ -120,19 +142,33 @@ export function ShareModal({
   onGetPdfBlob,
   sessionId,
 }: ShareModalProps) {
-  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfLoading, setPdfLoading] = useState<string | null>(null); // stores app id or "native" or "download"
   const [copied, setCopied] = useState(false);
 
   const linkUrl = shareUrl ?? (shareToken ? `${window.location.origin}/share/${shareToken}` : null);
   const shareText = "Check out my ink coverage analysis report from InkCalc!";
 
+  // ── Download PDF helper ───────────────────────────────────────────────────
+  const downloadPdf = async (): Promise<boolean> => {
+    const blob = await onGetPdfBlob();
+    if (!blob) return false;
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "ink-coverage-report.pdf";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(link.href);
+    return true;
+  };
+
   // ── Native Share (Android / iOS) ──────────────────────────────────────────
   const handleNativeShare = async () => {
     if (!isNativeShareSupported()) return;
+    setPdfLoading("native");
 
     // Try to share the PDF file directly if supported
     if (isFileShareSupported() && sessionId) {
-      setPdfLoading(true);
       try {
         const blob = await onGetPdfBlob();
         if (blob) {
@@ -144,18 +180,16 @@ export function ShareModal({
             ...(linkUrl ? { url: linkUrl } : {}),
           });
           toast.success("Shared successfully!");
+          setPdfLoading(null);
           onClose();
           return;
         }
       } catch (err: any) {
-        if (err?.name !== "AbortError") {
-          // Fall through to URL-only share
-        } else {
-          setPdfLoading(false);
+        if (err?.name === "AbortError") {
+          setPdfLoading(null);
           return;
         }
-      } finally {
-        setPdfLoading(false);
+        // Fall through to URL-only share
       }
     }
 
@@ -174,7 +208,27 @@ export function ShareModal({
           toast.error("Share failed. Try copying the link instead.");
         }
       }
+    } else {
+      // No link — try to share PDF file only
+      try {
+        const blob = await onGetPdfBlob();
+        if (blob) {
+          const file = new File([blob], "ink-coverage-report.pdf", { type: "application/pdf" });
+          await navigator.share({
+            title: "Ink Coverage Report",
+            text: shareText,
+            files: [file],
+          });
+          toast.success("Shared successfully!");
+          onClose();
+        }
+      } catch (err: any) {
+        if (err?.name !== "AbortError") {
+          toast.error("Share failed. Try downloading the PDF instead.");
+        }
+      }
     }
+    setPdfLoading(null);
   };
 
   // ── Copy Link ─────────────────────────────────────────────────────────────
@@ -188,41 +242,74 @@ export function ShareModal({
 
   // ── App Share ─────────────────────────────────────────────────────────────
   const handleAppShare = async (app: ShareApp) => {
-    if (!linkUrl) {
-      toast.error("No shareable link available. Please ensure you are not in private mode.");
+    if (app.action === "open_url") {
+      // For URL-based apps, we need a link
+      if (!linkUrl) {
+        // No link (private mode) — for messaging apps, try native share with PDF
+        if (isNativeShareSupported() && isFileShareSupported()) {
+          setPdfLoading(app.id);
+          try {
+            const blob = await onGetPdfBlob();
+            if (blob) {
+              const file = new File([blob], "ink-coverage-report.pdf", { type: "application/pdf" });
+              await navigator.share({ title: "Ink Coverage Report", text: shareText, files: [file] });
+              toast.success("Shared successfully!");
+              onClose();
+            }
+          } catch (err: any) {
+            if (err?.name !== "AbortError") {
+              toast.error("Share failed. Download the PDF and share it manually.");
+            }
+          } finally {
+            setPdfLoading(null);
+          }
+          return;
+        }
+        toast.error("No shareable link available (private mode). Download the PDF to share it manually.");
+        return;
+      }
+      const url = app.getUrl!(linkUrl, shareText);
+      window.open(url, "_blank", "noopener,noreferrer");
       return;
     }
 
-    // OneDrive and Dropbox: download the PDF first, then open the service
-    if (app.id === "onedrive" || app.id === "dropbox") {
-      setPdfLoading(true);
+    if (app.action === "download_then_upload") {
+      setPdfLoading(app.id);
       try {
-        const blob = await onGetPdfBlob();
-        if (blob) {
-          // Download the PDF to device first
-          const link = document.createElement("a");
-          link.href = URL.createObjectURL(blob);
-          link.download = "ink-coverage-report.pdf";
-          link.click();
-          URL.revokeObjectURL(link.href);
-          toast.success(
-            `PDF downloaded! Now open ${app.label} and upload the file from your Downloads folder.`,
-            { duration: 6000 }
-          );
+        const ok = await downloadPdf();
+        if (ok) {
+          toast.success(app.uploadHint ?? `PDF downloaded — upload it to ${app.label}.`, { duration: 7000 });
+          // Open the upload page after a short delay so the download starts first
+          setTimeout(() => {
+            window.open(app.uploadUrl, "_blank", "noopener,noreferrer");
+          }, 800);
+        } else {
+          toast.error("Could not generate PDF. Please try the Download PDF button.");
         }
       } catch {
         toast.error("Failed to prepare PDF for download.");
       } finally {
-        setPdfLoading(false);
+        setPdfLoading(null);
       }
       return;
     }
 
-    const url = app.getUrl(linkUrl, shareText);
-    window.open(url, "_blank", "noopener,noreferrer");
+    if (app.action === "download_pdf") {
+      setPdfLoading(app.id);
+      try {
+        const ok = await downloadPdf();
+        if (ok) toast.success("PDF downloaded — ready to share!");
+        else toast.error("Could not generate PDF.");
+      } catch {
+        toast.error("Failed to download PDF.");
+      } finally {
+        setPdfLoading(null);
+      }
+    }
   };
 
   const nativeSupported = isNativeShareSupported();
+  const isAnyLoading = pdfLoading !== null;
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
@@ -247,14 +334,14 @@ export function ShareModal({
             <Button
               className="w-full h-12 text-base font-semibold gap-2 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white shadow-md"
               onClick={handleNativeShare}
-              disabled={pdfLoading}
+              disabled={isAnyLoading}
             >
-              {pdfLoading ? (
+              {pdfLoading === "native" ? (
                 <Loader2 className="w-5 h-5 animate-spin" />
               ) : (
                 <Share2 className="w-5 h-5" />
               )}
-              {pdfLoading ? "Preparing PDF…" : "Share via Apps"}
+              {pdfLoading === "native" ? "Preparing…" : "Share via Apps"}
               <Badge variant="secondary" className="ml-1 text-xs bg-blue-400/30 text-white border-0">
                 Opens Share Sheet
               </Badge>
@@ -267,25 +354,47 @@ export function ShareModal({
               {nativeSupported ? "Or choose an app" : "Share via"}
             </p>
             <div className="grid grid-cols-4 gap-3">
-              {SHARE_APPS.map((app) => (
-                <button
-                  key={app.id}
-                  onClick={() => handleAppShare(app)}
-                  disabled={pdfLoading}
-                  className="flex flex-col items-center gap-1.5 p-2.5 rounded-xl hover:bg-muted transition-colors disabled:opacity-50 group"
-                >
-                  <div
-                    className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shadow-sm group-hover:scale-105 transition-transform"
-                    style={{ backgroundColor: app.color + "22", border: `1.5px solid ${app.color}33` }}
+              {SHARE_APPS.map((app) => {
+                const isLoading = pdfLoading === app.id;
+                return (
+                  <button
+                    key={app.id}
+                    onClick={() => handleAppShare(app)}
+                    disabled={isAnyLoading}
+                    className="flex flex-col items-center gap-1.5 p-2.5 rounded-xl hover:bg-muted transition-colors disabled:opacity-50 group"
                   >
-                    {app.icon}
-                  </div>
-                  <span className="text-xs text-center text-muted-foreground leading-tight font-medium">
-                    {app.label}
-                  </span>
-                </button>
-              ))}
+                    <div
+                      className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shadow-sm group-hover:scale-105 transition-transform relative"
+                      style={{ backgroundColor: app.color + "22", border: `1.5px solid ${app.color}33` }}
+                    >
+                      {isLoading ? (
+                        <Loader2 className="w-5 h-5 animate-spin" style={{ color: app.color }} />
+                      ) : (
+                        app.icon
+                      )}
+                      {/* Upload badge for cloud apps */}
+                      {(app.action === "download_then_upload") && !isLoading && (
+                        <span
+                          className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center"
+                          style={{ backgroundColor: app.color }}
+                          title="Downloads PDF then opens upload page"
+                        >
+                          <CloudUpload className="w-2.5 h-2.5 text-white" />
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-xs text-center text-muted-foreground leading-tight font-medium">
+                      {app.label}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
+            {/* Hint for cloud upload apps */}
+            <p className="text-xs text-muted-foreground mt-2 flex items-center gap-1">
+              <CloudUpload className="w-3 h-3 inline-block flex-shrink-0" />
+              OneDrive &amp; Dropbox: downloads the PDF, then opens the upload page.
+            </p>
           </div>
 
           {/* Share Link */}
@@ -332,26 +441,20 @@ export function ShareModal({
             variant="outline"
             className="w-full gap-2"
             onClick={async () => {
-              setPdfLoading(true);
+              setPdfLoading("download");
               try {
-                const blob = await onGetPdfBlob();
-                if (blob) {
-                  const link = document.createElement("a");
-                  link.href = URL.createObjectURL(blob);
-                  link.download = "ink-coverage-report.pdf";
-                  link.click();
-                  URL.revokeObjectURL(link.href);
-                  toast.success("PDF downloaded — ready to share!");
-                }
+                const ok = await downloadPdf();
+                if (ok) toast.success("PDF downloaded — ready to share!");
+                else toast.error("Could not generate PDF.");
               } catch {
                 toast.error("Failed to download PDF.");
               } finally {
-                setPdfLoading(false);
+                setPdfLoading(null);
               }
             }}
-            disabled={pdfLoading}
+            disabled={isAnyLoading}
           >
-            {pdfLoading ? (
+            {pdfLoading === "download" ? (
               <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
               <Download className="w-4 h-4" />
