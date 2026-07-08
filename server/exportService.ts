@@ -1,11 +1,18 @@
 import { PDFDocument, rgb, StandardFonts, type RGB } from "pdf-lib";
 import Papa from "papaparse";
+import { readFileSync } from "fs";
+import { join } from "path";
 import type { PageCostResult } from "./analysisService";
 import type { PageAnalysis, UploadedFile } from "../drizzle/schema";
 
-// SCTDJM logo embedded as base64 so it is always available in production
-// without any file-path dependency. Generated from sctdjm_logo.png (239×52 px).
-const SCTDJM_LOGO_B64 =
+// SCTDJM logo — load high-res PNG from disk (956×208 px, 4× upscaled for crisp PDF rendering).
+// Falls back to the embedded low-res base64 if the file is unavailable.
+let LOGO_BYTES: Uint8Array;
+try {
+  LOGO_BYTES = new Uint8Array(readFileSync(join(__dirname, "assets", "sctdjm_logo_hires.png")));
+} catch {
+  // Fallback: original low-res base64 (239×52 px)
+  const SCTDJM_LOGO_B64_FALLBACK =
   "iVBORw0KGgoAAAANSUhEUgAAAO8AAAA0CAMAAABVV59nAAAB5lBMVEVMaXF/w0YWLVSAw0l8wkN/w0Z/" +
   "w0Z8wkN8wkN/w0aAw0l/w0aAw0l/w0Z/w0Z/w0Z/w0Z/w0Z/w0Z/w0aAw0kWLVR8wkN/w0YWLVR/w0Z8" +
   "wkN/w0Z/w0Z/w0Z8wkN/w0Z/w0YWLVR8wkN/w0aAw0l/w0Z/w0Z/w0Z/w0Z/w0YWLVR8wkN/w0Z/w0Z/" +
@@ -59,8 +66,8 @@ const SCTDJM_LOGO_B64 =
   "wGuNKwnMtkM0XOFjYprMV4Tb7eeWUxWiBiH0vz5y596zu8q/t5543QbxbZH5W0eCzNW8R5naiQm8i7t8" +
   "x7yrmyonN9fyFS2FLKQIEjI+Ax4LmLGTD7GKBnEZhxXQByB9fJ3rLzHm7PvajBDm9z+aNx5BsPf//PYu" +
   "0PnpcQ0f8AkZXFJt6QED8AAAAASUVORK5CYII=";
-
-const LOGO_BYTES: Uint8Array = Buffer.from(SCTDJM_LOGO_B64, "base64");
+  LOGO_BYTES = new Uint8Array(Buffer.from(SCTDJM_LOGO_B64_FALLBACK, "base64"));
+}
 
 // ─── CSV Export ───────────────────────────────────────────────────────────────
 
@@ -222,12 +229,12 @@ export async function generatePdfReport(options: {
   rect(0, PAGE_H - 113, PAGE_W, 3, C_ACCENT);
 
   // Draw SCTDJM logo in the top-right corner of the header band
+  // scaleToFit preserves aspect ratio; 160×44 pt gives a crisp render with the 4× hi-res PNG
   if (logoImage) {
-    // Scale logo to fit within a 140×30 pt box, preserving aspect ratio
-    const logoDims = logoImage.scaleToFit(140, 30);
+    const logoDims = logoImage.scaleToFit(160, 44);
     page.drawImage(logoImage, {
       x: PAGE_W - MARGIN - logoDims.width,
-      y: PAGE_H - MARGIN - logoDims.height + 4,
+      y: PAGE_H - MARGIN - logoDims.height + 6,
       width: logoDims.width,
       height: logoDims.height,
     });
