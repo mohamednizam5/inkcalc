@@ -986,8 +986,16 @@ export default function Home() {
                           type="number"
                           min="0"
                           step="0.001"
-                          value={costParams.paperCostPerSheet}
-                          onChange={(e) => { const v = parseFloat(e.target.value); setCostParams((p) => ({ ...p, paperCostPerSheet: isNaN(v) || v < 0 ? 0 : v })); }}
+                          defaultValue={costParams.paperCostPerSheet}
+                          key={`paper-${costParams.paperCostPerSheet}`}
+                          onChange={(e) => {
+                            const v = parseFloat(e.target.value);
+                            if (!isNaN(v) && v >= 0) setCostParams((p) => ({ ...p, paperCostPerSheet: v }));
+                          }}
+                          onBlur={(e) => {
+                            const v = parseFloat(e.target.value);
+                            setCostParams((p) => ({ ...p, paperCostPerSheet: isNaN(v) || v < 0 ? 0 : v }));
+                          }}
                         />
                       </div>
                       <div className="space-y-1.5">
@@ -996,8 +1004,16 @@ export default function Home() {
                           id="copies"
                           type="number"
                           min="1"
-                          value={costParams.copies}
-                          onChange={(e) => { const v = parseInt(e.target.value, 10); setCostParams((p) => ({ ...p, copies: isNaN(v) || v < 1 ? 1 : v })); }}
+                          defaultValue={costParams.copies}
+                          key={`copies-${costParams.copies}`}
+                          onChange={(e) => {
+                            const v = parseInt(e.target.value, 10);
+                            if (!isNaN(v) && v >= 1) setCostParams((p) => ({ ...p, copies: v }));
+                          }}
+                          onBlur={(e) => {
+                            const v = parseInt(e.target.value, 10);
+                            setCostParams((p) => ({ ...p, copies: isNaN(v) || v < 1 ? 1 : v }));
+                          }}
                         />
                       </div>
                       <div className="space-y-1.5">
