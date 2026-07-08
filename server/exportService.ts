@@ -90,7 +90,7 @@ export function generateCsv(
         "Magenta Coverage (%)": (p.mCoverage ?? 0).toFixed(4),
         "Yellow Coverage (%)": (p.yCoverage ?? 0).toFixed(4),
         "Black Coverage (%)": (p.kCoverage ?? 0).toFixed(4),
-        "TAC (%)": (p.tac ?? 0).toFixed(4),
+        "Total Ink Coverage (%)": (p.tac ?? 0).toFixed(4),
         // RGB channel coverage
         "Red Coverage (%)": cost?.rCoverage != null ? cost.rCoverage.toFixed(4) : (p as any).rCoverage != null ? ((p as any).rCoverage).toFixed(4) : "",
         "Green Coverage (%)": cost?.gCoverage != null ? cost.gCoverage.toFixed(4) : (p as any).gCoverage != null ? ((p as any).gCoverage).toFixed(4) : "",
@@ -286,7 +286,7 @@ export async function generatePdfReport(options: {
   const statCards = [
     { label: "Files",       value: String(files.length) },
     { label: "Pages",       value: String(totalPagesCount) },
-    { label: "Avg TAC",     value: `${avgTac.toFixed(1)}%` },
+    { label: "Avg Total Ink Coverage", value: `${avgTac.toFixed(1)}%` },
     { label: "Total Cost",  value: totalCost !== undefined ? `$${totalCost.toFixed(2)}` : "—" },
   ];
   const cardW = (CONTENT_W - 12) / 4;
@@ -324,9 +324,9 @@ export async function generatePdfReport(options: {
     text(`${ch.value.toFixed(2)}%`, MARGIN + barLabelW + barTrackW + 6, y, { size: 8, color: C_MUTED });
     y -= barH + 6;
   }
-  // TAC row
+  // Total Ink Coverage row
   ensureSpace(barH + 8);
-  text("TAC", MARGIN, y, { size: 8, bold: true, color: C_TEXT });
+  text("Total Ink Coverage", MARGIN, y, { size: 8, bold: true, color: C_TEXT });
   drawBar(MARGIN + barLabelW, y - barH + 2, barTrackW, barH, avgTac, C_ACCENT);
   text(`${avgTac.toFixed(2)}%`, MARGIN + barLabelW + barTrackW + 6, y, { size: 8, color: C_MUTED });
   y -= barH + 14;
@@ -397,8 +397,8 @@ export async function generatePdfReport(options: {
   // Detect RGB mode from costResults
   const isRgbMode = costResults?.some((c) => c.colorMode === "rgb") ?? false;
 
-  // Column layout: CMYK mode: File/Page | C% | M% | Y% | K% | TAC% | C$ | M$ | Y$ | K$ | Paper$ | Total$
-  //               RGB mode:  File/Page | R% | G% | B% | TAC% | R$ | G$ | B$ | Paper$ | Total$
+  // Column layout: CMYK mode: File/Page | C% | M% | Y% | K% | TIC% | C$ | M$ | Y$ | K$ | Paper$ | Total$
+  //               RGB mode:  File/Page | R% | G% | B% | TIC% | R$ | G$ | B$ | Paper$ | Total$
   const COL = isRgbMode ? {
     file:   MARGIN,
     r:      MARGIN + 115,
@@ -437,7 +437,7 @@ export async function generatePdfReport(options: {
     ["R%",    COL.r],
     ["G%",    COL.g],
     ["B%",    COL.b],
-    ["TAC%",  COL.tac],
+    ["TIC%", COL.tac],
     ["R $",   COL.rCost],
     ["G $",   COL.gCost],
     ["B $",   COL.bCost],
@@ -449,7 +449,7 @@ export async function generatePdfReport(options: {
     ["M%",    COL.m],
     ["Y%",    COL.yy],
     ["K%",    COL.k],
-    ["TAC%",  COL.tac],
+    ["TIC%", COL.tac],
     ["C $",   COL.cCost],
     ["M $",   COL.mCost],
     ["Y $",   COL.yCost],

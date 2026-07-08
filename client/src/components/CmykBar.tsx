@@ -59,7 +59,7 @@ export function CmykGroup({ c, m, y, k, tac, size = "md" }: CmykGroupProps) {
       {tac !== undefined && (
         <div className="pt-1 border-t border-border/50">
           <div className="flex justify-between items-center">
-            <span className="text-xs text-muted-foreground font-medium">TAC</span>
+            <span className="text-xs text-muted-foreground font-medium">Total Ink Coverage</span>
             <span className="text-xs font-mono font-semibold tabular-nums">{tac.toFixed(1)}%</span>
           </div>
         </div>

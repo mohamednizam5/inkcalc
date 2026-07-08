@@ -222,7 +222,7 @@ export default function SharedResult() {
                   <th className="text-right py-2 px-2 text-xs font-semibold text-pink-600">M%</th>
                   <th className="text-right py-2 px-2 text-xs font-semibold text-yellow-600">Y%</th>
                   <th className="text-right py-2 px-2 text-xs font-semibold text-gray-700">K%</th>
-                  <th className="text-right py-2 px-2 text-xs font-semibold text-muted-foreground">TAC%</th>
+                  <th className="text-right py-2 px-2 text-xs font-semibold text-muted-foreground">Total Ink Cov%</th>
                 </tr>
               </thead>
               <tbody>

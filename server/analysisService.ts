@@ -216,8 +216,8 @@ Average CMYK Coverage:
 - Magenta: ${avgM.toFixed(2)}%
 - Yellow: ${avgY.toFixed(2)}%
 - Black (Key): ${avgK.toFixed(2)}%
-- Total Area Coverage (TAC): ${avgTac.toFixed(2)}%
-- Highest TAC on any page: ${maxTac.toFixed(2)}%
+- Total Ink Coverage: ${avgTac.toFixed(2)}%
+- Highest Total Ink Coverage on any page: ${maxTac.toFixed(2)}%
 
 Provide:
 1. A 2-3 sentence plain-language summary of the ink coverage profile.
