@@ -45,6 +45,14 @@ const costParamsSchema = z.object({
   paperCostPerSheet: z.number().default(0.01),
   isDuplex: z.boolean().default(false),
   copies: z.number().int().min(1).default(1),
+  // RGB mode
+  colorMode: z.enum(["cmyk", "rgb"]).default("cmyk"),
+  rCartridgePrice: z.number().optional(),
+  rCartridgeYield: z.number().optional(),
+  gCartridgePrice: z.number().optional(),
+  gCartridgeYield: z.number().optional(),
+  bCartridgePrice: z.number().optional(),
+  bCartridgeYield: z.number().optional(),
 });
 
 export const appRouter = router({

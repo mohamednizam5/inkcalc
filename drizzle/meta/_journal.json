@@ -36,6 +36,13 @@
       "when": 1779689644420,
       "tag": "0004_broken_adam_warlock",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1783521867558,
+      "tag": "0005_awesome_tarantula",
+      "breakpoints": true
     }
   ]
 }

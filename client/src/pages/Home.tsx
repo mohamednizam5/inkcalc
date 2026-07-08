@@ -80,6 +80,7 @@ const SUPPORTED_EXTENSIONS = ".pdf,.jpg,.jpeg,.png,.tiff,.tif,.eps,.docx,.doc";
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
 
 const CMYK_COLORS = ["#06b6d4", "#ec4899", "#eab308", "#1f2937"];
+const RGB_COLORS  = ["#ef4444", "#22c55e", "#3b82f6"];
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
@@ -239,7 +240,8 @@ export default function Home() {
         const total = result?.totalCost?.toFixed(4) ?? "0.0000";
         const ink = result?.totalInkCost?.toFixed(4) ?? "0.0000";
         const paper = result?.totalPaperCost?.toFixed(4) ?? "0.0000";
-        setAssistantMessage(`Here are your results! Your total job cost is $${total}, made up of $${ink} in ink and $${paper} in paper. Check out the CMYK breakdown charts below. Would you like to download your results as a PDF report or CSV spreadsheet?`);
+        const mode = costParams.colorMode === "rgb" ? "RGB" : "CMYK";
+        setAssistantMessage(`Here are your results! Your total job cost is $${total}, made up of $${ink} in ink and $${paper} in paper. Check out the ${mode} breakdown charts below. Would you like to download your results as a PDF report or CSV spreadsheet?`);
         setShowDownloadPrompt(true);
       }, 1200);
       await refetchResults();
@@ -1185,7 +1187,7 @@ export default function Home() {
                     </div>
                     <div>
                       <p className="text-sm font-semibold text-red-900">Download PDF Report</p>
-                      <p className="text-xs text-red-700/80">Branded report with CMYK coverage, cost breakdown, and AI recommendations</p>
+                      <p className="text-xs text-red-700/80">Branded report with {costResults?.colorMode === "rgb" ? "RGB" : "CMYK"} coverage, cost breakdown, and AI recommendations</p>
                     </div>
                   </div>
                   <Button
@@ -1220,15 +1222,29 @@ export default function Home() {
                 </div>
 
                 {/* Charts */}
+                {(() => {
+                  const isRgbChart = costResults?.colorMode === "rgb";
+                  const rgbChartData = pages.map((p) => ({
+                    name: `P${p.pageNumber}`,
+                    R: +((p as any).rCoverage ?? 0).toFixed(2),
+                    G: +((p as any).gCoverage ?? 0).toFixed(2),
+                    B: +((p as any).bCoverage ?? 0).toFixed(2),
+                  }));
+                  const rgbPieData = [
+                    { name: "Red",   value: +(pages.reduce((s, p) => s + ((p as any).rCoverage ?? 0), 0) / Math.max(pages.length, 1)).toFixed(2) },
+                    { name: "Green", value: +(pages.reduce((s, p) => s + ((p as any).gCoverage ?? 0), 0) / Math.max(pages.length, 1)).toFixed(2) },
+                    { name: "Blue",  value: +(pages.reduce((s, p) => s + ((p as any).bCoverage ?? 0), 0) / Math.max(pages.length, 1)).toFixed(2) },
+                  ].filter((d) => d.value > 0);
+                  return (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   {/* Per-page coverage chart */}
                   <Card>
                     <CardHeader className="pb-2">
-                      <CardTitle className="text-base">Per-Page CMYK Coverage</CardTitle>
+                      <CardTitle className="text-base">Per-Page {isRgbChart ? "RGB" : "CMYK"} Coverage</CardTitle>
                     </CardHeader>
                     <CardContent>
                       <ResponsiveContainer width="100%" height={220}>
-                        <BarChart data={chartData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+                        <BarChart data={isRgbChart ? rgbChartData : chartData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                           <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                           <YAxis tick={{ fontSize: 11 }} unit="%" />
@@ -1236,10 +1252,20 @@ export default function Home() {
                             contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid var(--border)", background: "var(--card)" }}
                             formatter={(v: number) => `${v.toFixed(2)}%`}
                           />
-                          <Bar dataKey="C" fill="#06b6d4" radius={[2, 2, 0, 0]} />
-                          <Bar dataKey="M" fill="#ec4899" radius={[2, 2, 0, 0]} />
-                          <Bar dataKey="Y" fill="#eab308" radius={[2, 2, 0, 0]} />
-                          <Bar dataKey="K" fill="#374151" radius={[2, 2, 0, 0]} />
+                          {isRgbChart ? (
+                            <>
+                              <Bar dataKey="R" fill="#ef4444" radius={[2, 2, 0, 0]} />
+                              <Bar dataKey="G" fill="#22c55e" radius={[2, 2, 0, 0]} />
+                              <Bar dataKey="B" fill="#3b82f6" radius={[2, 2, 0, 0]} />
+                            </>
+                          ) : (
+                            <>
+                              <Bar dataKey="C" fill="#06b6d4" radius={[2, 2, 0, 0]} />
+                              <Bar dataKey="M" fill="#ec4899" radius={[2, 2, 0, 0]} />
+                              <Bar dataKey="Y" fill="#eab308" radius={[2, 2, 0, 0]} />
+                              <Bar dataKey="K" fill="#374151" radius={[2, 2, 0, 0]} />
+                            </>
+                          )}
                         </BarChart>
                       </ResponsiveContainer>
                     </CardContent>
@@ -1251,12 +1277,12 @@ export default function Home() {
                       <CardTitle className="text-base">Average Channel Distribution</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      {pieData.length > 0 ? (
+                      {(isRgbChart ? rgbPieData : pieData).length > 0 ? (
                         <ResponsiveContainer width="100%" height={220}>
                           <PieChart>
-                            <Pie data={pieData} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={3} dataKey="value">
-                              {pieData.map((_, index) => (
-                                <Cell key={index} fill={CMYK_COLORS[index]} />
+                            <Pie data={isRgbChart ? rgbPieData : pieData} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={3} dataKey="value">
+                              {(isRgbChart ? rgbPieData : pieData).map((_, index) => (
+                                <Cell key={index} fill={(isRgbChart ? RGB_COLORS : CMYK_COLORS)[index]} />
                               ))}
                             </Pie>
                             <Legend iconType="circle" iconSize={8} formatter={(v) => <span style={{ fontSize: 12 }}>{v}</span>} />
@@ -1269,6 +1295,8 @@ export default function Home() {
                     </CardContent>
                   </Card>
                 </div>
+                  );
+                })()}
 
                 {/* Per-channel cost breakdown */}
                 {costResults.perChannel && (
@@ -1278,14 +1306,16 @@ export default function Home() {
                     </CardHeader>
                     <CardContent>
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        {costResults.perChannel.map((ch: any, i: number) => (
+                        {costResults.perChannel.map((ch: any, i: number) => {
+                          const channelColors = costResults.colorMode === "rgb" ? RGB_COLORS : CMYK_COLORS;
+                          return (
                           <div key={ch.channel} className="text-center p-3 rounded-lg bg-muted/40">
-                            <div className="w-3 h-3 rounded-full mx-auto mb-2" style={{ background: CMYK_COLORS[i] }} />
+                            <div className="w-3 h-3 rounded-full mx-auto mb-2" style={{ background: channelColors[i] }} />
                             <p className="text-xs font-medium text-muted-foreground">{ch.channel}</p>
                             <p className="text-lg font-bold font-mono tabular-nums mt-1">${ch.cost.toFixed(4)}</p>
                             <p className="text-xs text-muted-foreground">{ch.avgCoverage.toFixed(2)}% avg</p>
                           </div>
-                        ))}
+                        ); })}
                       </div>
                     </CardContent>
                   </Card>
@@ -1297,37 +1327,65 @@ export default function Home() {
                     <CardTitle className="text-base">Per-Page Breakdown</CardTitle>
                   </CardHeader>
                   <CardContent className="overflow-x-auto pr-4 sm:pr-6">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-border">
-                          <th className="text-left py-2 px-2 text-xs font-semibold text-muted-foreground">File</th>
-                          <th className="text-right py-2 px-2 text-xs font-semibold text-muted-foreground">Page</th>
-                          <th className="text-right py-2 px-2 text-xs font-semibold text-cyan-600">C%</th>
-                          <th className="text-right py-2 px-2 text-xs font-semibold text-pink-600">M%</th>
-                          <th className="text-right py-2 px-2 text-xs font-semibold text-yellow-600">Y%</th>
-                          <th className="text-right py-2 px-2 text-xs font-semibold text-gray-700">K%</th>
-                          <th className="text-right py-2 px-2 text-xs font-semibold text-muted-foreground">Total Ink Cov%</th>
-                          <th className="text-right py-2 px-2 pr-4 text-xs font-semibold text-muted-foreground">Cost</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {costResults.perPage.map((row: any, i: number) => {
-                          const file = files.find((f) => f.id === row.fileId);
-                          return (
-                            <tr key={i} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
-                              <td className="py-2 px-2 text-xs text-muted-foreground max-w-[120px] truncate">{file?.filename ?? `File ${row.fileId}`}</td>
-                              <td className="py-2 px-2 text-right font-mono">{row.pageNumber}</td>
-                              <td className="py-2 px-2 text-right font-mono text-cyan-600">{row.cCoverage.toFixed(2)}</td>
-                              <td className="py-2 px-2 text-right font-mono text-pink-600">{row.mCoverage.toFixed(2)}</td>
-                              <td className="py-2 px-2 text-right font-mono text-yellow-600">{row.yCoverage.toFixed(2)}</td>
-                              <td className="py-2 px-2 text-right font-mono text-gray-700">{row.kCoverage.toFixed(2)}</td>
-                              <td className="py-2 px-2 text-right font-mono font-semibold">{row.tac.toFixed(2)}</td>
-                              <td className="py-2 px-2 pr-4 text-right font-mono font-semibold">${(isNaN(row.totalCostPerPage) ? 0 : row.totalCostPerPage).toFixed(4)}</td>
+                    {(() => {
+                      const isRgb = costResults.colorMode === "rgb";
+                      return (
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b border-border">
+                              <th className="text-left py-2 px-2 text-xs font-semibold text-muted-foreground">File</th>
+                              <th className="text-right py-2 px-2 text-xs font-semibold text-muted-foreground">Page</th>
+                              {isRgb ? (
+                                <>
+                                  <th className="text-right py-2 px-2 text-xs font-semibold text-red-500">R%</th>
+                                  <th className="text-right py-2 px-2 text-xs font-semibold text-green-600">G%</th>
+                                  <th className="text-right py-2 px-2 text-xs font-semibold text-blue-600">B%</th>
+                                </>
+                              ) : (
+                                <>
+                                  <th className="text-right py-2 px-2 text-xs font-semibold text-cyan-600">C%</th>
+                                  <th className="text-right py-2 px-2 text-xs font-semibold text-pink-600">M%</th>
+                                  <th className="text-right py-2 px-2 text-xs font-semibold text-yellow-600">Y%</th>
+                                  <th className="text-right py-2 px-2 text-xs font-semibold text-gray-700">K%</th>
+                                </>
+                              )}
+                              <th className="text-right py-2 px-2 text-xs font-semibold text-muted-foreground">Total Ink Cov%</th>
+                              <th className="text-right py-2 px-2 pr-4 text-xs font-semibold text-muted-foreground">Cost</th>
                             </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                          </thead>
+                          <tbody>
+                            {costResults.perPage.map((row: any, i: number) => {
+                              const file = files.find((f) => f.id === row.fileId);
+                              const tic = isRgb
+                                ? ((row.rCoverage ?? 0) + (row.gCoverage ?? 0) + (row.bCoverage ?? 0))
+                                : row.tac;
+                              return (
+                                <tr key={i} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
+                                  <td className="py-2 px-2 text-xs text-muted-foreground max-w-[120px] truncate">{file?.filename ?? `File ${row.fileId}`}</td>
+                                  <td className="py-2 px-2 text-right font-mono">{row.pageNumber}</td>
+                                  {isRgb ? (
+                                    <>
+                                      <td className="py-2 px-2 text-right font-mono text-red-500">{(row.rCoverage ?? 0).toFixed(2)}</td>
+                                      <td className="py-2 px-2 text-right font-mono text-green-600">{(row.gCoverage ?? 0).toFixed(2)}</td>
+                                      <td className="py-2 px-2 text-right font-mono text-blue-600">{(row.bCoverage ?? 0).toFixed(2)}</td>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <td className="py-2 px-2 text-right font-mono text-cyan-600">{(row.cCoverage ?? 0).toFixed(2)}</td>
+                                      <td className="py-2 px-2 text-right font-mono text-pink-600">{(row.mCoverage ?? 0).toFixed(2)}</td>
+                                      <td className="py-2 px-2 text-right font-mono text-yellow-600">{(row.yCoverage ?? 0).toFixed(2)}</td>
+                                      <td className="py-2 px-2 text-right font-mono text-gray-700">{(row.kCoverage ?? 0).toFixed(2)}</td>
+                                    </>
+                                  )}
+                                  <td className="py-2 px-2 text-right font-mono font-semibold">{(isNaN(tic) ? 0 : tic).toFixed(2)}</td>
+                                  <td className="py-2 px-2 pr-4 text-right font-mono font-semibold">${(isNaN(row.totalCostPerPage) ? 0 : row.totalCostPerPage).toFixed(4)}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      );
+                    })()}
                   </CardContent>
                 </Card>
 
