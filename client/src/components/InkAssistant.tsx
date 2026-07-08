@@ -5,6 +5,7 @@ interface InkAssistantProps {
   onDownloadPDF?: () => void;
   onDownloadCSV?: () => void;
   showDownloadPrompt?: boolean;
+  step?: number;
 }
 
 export function InkAssistant({
@@ -12,6 +13,7 @@ export function InkAssistant({
   onDownloadPDF,
   onDownloadCSV,
   showDownloadPrompt = false,
+  step,
 }: InkAssistantProps) {
   const [visible, setVisible] = useState(true);
   const [speaking, setSpeaking] = useState(false);
@@ -81,6 +83,13 @@ export function InkAssistant({
     setVisible(true);
     speakMessage(message);
   }, [message, speakMessage]);
+
+  // Auto-minimize on Results step (step 4) so the table is not obscured
+  useEffect(() => {
+    if (step === 4) {
+      setMinimized(true);
+    }
+  }, [step]);
 
   if (!visible) return null;
 

@@ -497,7 +497,7 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="container py-8 space-y-8">
+      <main className="container py-8 pb-52 space-y-8">
         {/* ── Step Indicator ── */}
         <div className="px-2">
           <StepIndicator steps={STEPS} currentStep={currentStep} />
@@ -1231,7 +1231,7 @@ export default function Home() {
                   <CardHeader className="pb-2">
                     <CardTitle className="text-base">Per-Page Breakdown</CardTitle>
                   </CardHeader>
-                  <CardContent className="overflow-x-auto">
+                  <CardContent className="overflow-x-auto pr-4 sm:pr-6">
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b border-border">
@@ -1242,7 +1242,7 @@ export default function Home() {
                           <th className="text-right py-2 px-2 text-xs font-semibold text-yellow-600">Y%</th>
                           <th className="text-right py-2 px-2 text-xs font-semibold text-gray-700">K%</th>
                           <th className="text-right py-2 px-2 text-xs font-semibold text-muted-foreground">TAC%</th>
-                          <th className="text-right py-2 px-2 text-xs font-semibold text-muted-foreground">Cost</th>
+                          <th className="text-right py-2 px-2 pr-4 text-xs font-semibold text-muted-foreground">Cost</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1257,7 +1257,7 @@ export default function Home() {
                               <td className="py-2 px-2 text-right font-mono text-yellow-600">{row.yCoverage.toFixed(2)}</td>
                               <td className="py-2 px-2 text-right font-mono text-gray-700">{row.kCoverage.toFixed(2)}</td>
                               <td className="py-2 px-2 text-right font-mono font-semibold">{row.tac.toFixed(2)}</td>
-                              <td className="py-2 px-2 text-right font-mono font-semibold">${row.totalCostPerPage.toFixed(4)}</td>
+                              <td className="py-2 px-2 pr-4 text-right font-mono font-semibold">${row.totalCostPerPage.toFixed(4)}</td>
                             </tr>
                           );
                         })}
@@ -1464,6 +1464,7 @@ export default function Home() {
         showDownloadPrompt={showDownloadPrompt}
         onDownloadPDF={handleExportPdf}
         onDownloadCSV={handleExportCsv}
+        step={currentStep}
       />
 
       {/* ── Add Printer Modal ── */}
