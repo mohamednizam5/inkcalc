@@ -109,6 +109,10 @@ export const costPresets = mysqlTable("cost_presets", {
   paperCostPerSheet: float("paperCostPerSheet").default(0.01),
   isDuplex: boolean("isDuplex").default(false),
   isBuiltIn: boolean("isBuiltIn").default(false),
+  // Flexible cartridge system — stores the full cartridge config as JSON.
+  // When present, this takes priority over the individual CMYK scalar columns above.
+  printerType: varchar("printerType", { length: 32 }),  // e.g. "2-cartridge", "4-cartridge"
+  cartridgesJson: json("cartridgesJson").$type<import('../shared/cartridgeTypes').CartridgeDef[]>(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 

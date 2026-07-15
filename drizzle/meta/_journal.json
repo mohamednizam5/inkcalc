@@ -43,6 +43,13 @@
       "when": 1783521867558,
       "tag": "0005_awesome_tarantula",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1784134755202,
+      "tag": "0006_lazy_moon_knight",
+      "breakpoints": true
     }
   ]
 }

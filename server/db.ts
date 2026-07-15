@@ -226,6 +226,9 @@ export async function saveCostPreset(data: {
   mlPerCartridge?: number;
   paperCostPerSheet?: number;
   isDuplex?: boolean;
+  // Flexible cartridge system
+  printerType?: string;
+  cartridgesJson?: import('../shared/cartridgeTypes').CartridgeDef[];
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database unavailable");
@@ -340,6 +343,7 @@ export async function addCustomPrinter(data: {
   model: string;
   cartridgeModel?: string;
   cartridgeType?: string;
+  // Legacy CMYK scalar fields (still accepted for backward compat)
   cCartridgePrice?: number;
   cCartridgeYield?: number;
   mCartridgePrice?: number;
@@ -353,6 +357,9 @@ export async function addCustomPrinter(data: {
   coveragePercent?: number;
   pricePerMl?: number;
   mlPerCartridge?: number;
+  // Flexible cartridge system
+  printerType?: string;
+  cartridgesJson?: import('../shared/cartridgeTypes').CartridgeDef[];
 }): Promise<{ printerId: number; presetId: number }> {
   const db = await getDb();
   if (!db) throw new Error("Database unavailable");
@@ -379,6 +386,8 @@ export async function addCustomPrinter(data: {
     compatiblePrinters: data.model,
     paperCostPerSheet: 0.01,
     isBuiltIn: false,
+    printerType: data.printerType ?? null,
+    cartridgesJson: data.cartridgesJson ?? null,
   });
   const presetId = (presetResult as any)[0].insertId as number;
 

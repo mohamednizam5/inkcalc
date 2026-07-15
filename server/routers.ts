@@ -27,13 +27,23 @@ import { generateCsv, generatePdfReport } from "./exportService";
 import { storagePut } from "./storage";
 
 // ─── Cost params schema ───────────────────────────────────────────────────────
+const cartridgeDefSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  channels: z.array(z.enum(["C", "M", "Y", "K", "R", "G", "B"])),
+  blended: z.boolean(),
+  price: z.number(),
+  yield: z.number(),
+  color: z.string().optional(),
+});
+
 const costParamsSchema = z.object({
   pricePerCartridge: z.number().optional(),
   yieldPages: z.number().optional(),
   coveragePercent: z.number().default(5),
   pricePerMl: z.number().optional(),
   mlPerCartridge: z.number().optional(),
-  // Per-channel cartridge pricing
+  // Per-channel cartridge pricing (legacy)
   cCartridgePrice: z.number().optional(),
   cCartridgeYield: z.number().optional(),
   mCartridgePrice: z.number().optional(),
@@ -45,7 +55,7 @@ const costParamsSchema = z.object({
   paperCostPerSheet: z.number().default(0.01),
   isDuplex: z.boolean().default(false),
   copies: z.number().int().min(1).default(1),
-  // RGB mode
+  // RGB mode (legacy)
   colorMode: z.enum(["cmyk", "rgb"]).default("cmyk"),
   rCartridgePrice: z.number().optional(),
   rCartridgeYield: z.number().optional(),
@@ -53,6 +63,9 @@ const costParamsSchema = z.object({
   gCartridgeYield: z.number().optional(),
   bCartridgePrice: z.number().optional(),
   bCartridgeYield: z.number().optional(),
+  // Flexible cartridge system (new — takes priority)
+  printerType: z.string().optional(),
+  cartridges: z.array(cartridgeDefSchema).optional(),
 });
 
 export const appRouter = router({

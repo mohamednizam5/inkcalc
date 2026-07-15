@@ -21,6 +21,8 @@ import { AddPrinterModal, EMPTY_CUSTOM_PRINTER, type CustomPrinterData } from "@
 import { ShareModal } from "@/components/ShareModal";
 import { InkAssistant } from "@/components/InkAssistant";
 import { CmykGroup } from "@/components/CmykBar";
+import CartridgeConfig from "@/components/CartridgeConfig";
+import { PRINTER_TYPE_TEMPLATES, type CartridgeDef, type PrinterType } from "../../../shared/cartridgeTypes";
 import { trpc } from "@/lib/trpc";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartTooltip,
@@ -40,13 +42,13 @@ interface UploadedFileItem {
 }
 
 interface CostParams {
-  // Shared / fallback pricing
+  // Shared / fallback pricing (legacy — still used for old presets)
   pricePerCartridge?: number;
   yieldPages?: number;
   coveragePercent: number;
   pricePerMl?: number;
   mlPerCartridge?: number;
-  // Per-channel cartridge pricing (CMYK)
+  // Per-channel cartridge pricing (CMYK legacy)
   cCartridgePrice?: number;
   cCartridgeYield?: number;
   mCartridgePrice?: number;
@@ -55,7 +57,7 @@ interface CostParams {
   yCartridgeYield?: number;
   kCartridgePrice?: number;
   kCartridgeYield?: number;
-  // RGB inkjet printer pricing
+  // RGB inkjet printer pricing (legacy)
   colorMode?: "cmyk" | "rgb";
   rCartridgePrice?: number;
   rCartridgeYield?: number;
@@ -63,6 +65,9 @@ interface CostParams {
   gCartridgeYield?: number;
   bCartridgePrice?: number;
   bCartridgeYield?: number;
+  // Flexible cartridge system (new — takes priority when present)
+  printerType?: PrinterType;
+  cartridges?: CartridgeDef[];
   paperCostPerSheet: number;
   isDuplex: boolean;
   copies: number;
@@ -92,11 +97,19 @@ export default function Home() {
   const [sessionId, setSessionId] = useState<number | null>(null);
   const [shareToken, setShareToken] = useState<string | null>(null);
   const [pollingActive, setPollingActive] = useState(false);
+  // Default to 4-cartridge CMYK template
+  const defaultTemplate = PRINTER_TYPE_TEMPLATES.find((t) => t.type === "4-cartridge")!;
+  const [cartridges, setCartridges] = useState<CartridgeDef[]>(
+    defaultTemplate.cartridges.map((c) => ({ ...c, price: 0, yield: 0 }))
+  );
+  const [printerType, setPrinterType] = useState<PrinterType>("4-cartridge");
   const [costParams, setCostParams] = useState<CostParams>({
     coveragePercent: 5,
     paperCostPerSheet: 0.01,
     isDuplex: false,
     copies: 1,
+    printerType: "4-cartridge",
+    cartridges: defaultTemplate.cartridges.map((c) => ({ ...c, price: 0, yield: 0 })),
   });
   const [selectedPresetId, setSelectedPresetId] = useState<string>("");
   const [presetName, setPresetName] = useState("");
@@ -255,33 +268,31 @@ export default function Home() {
     if (!preset) return;
     setSelectedPresetId(presetId);
     const pAny = preset as any;
-    setCostParams((prev) => ({
-      ...prev,
-      pricePerCartridge: preset.pricePerCartridge ?? undefined,
-      yieldPages: preset.yieldPages ?? undefined,
-      coveragePercent: preset.coveragePercent ?? 5,
-      pricePerMl: preset.pricePerMl ?? undefined,
-      mlPerCartridge: preset.mlPerCartridge ?? undefined,
-      cCartridgePrice: pAny.cCartridgePrice || undefined,
-      cCartridgeYield: pAny.cCartridgeYield || undefined,
-      mCartridgePrice: pAny.mCartridgePrice || undefined,
-      mCartridgeYield: pAny.mCartridgeYield || undefined,
-      yCartridgePrice: pAny.yCartridgePrice || undefined,
-      yCartridgeYield: pAny.yCartridgeYield || undefined,
-      kCartridgePrice: pAny.kCartridgePrice || undefined,
-      kCartridgeYield: pAny.kCartridgeYield || undefined,
-      paperCostPerSheet: preset.paperCostPerSheet ?? 0.01,
-      isDuplex: preset.isDuplex ?? false,
-    }));
-    setAppliedTonerName(pAny.cartridgeModel ?? preset.name);
-  };
-
-  const handleSelectPrinter = async (printerId: number, printerModel: string) => {
-    setSelectedPrinterId(printerId);
-    try {
-      const preset = await getPresetByPrinter.mutateAsync({ printerId });
-      if (!preset) { toast.error("No toner preset found for this printer."); return; }
-      const pAny = preset as any;
+    // If preset has flexible cartridge data, use it
+    if (pAny.cartridgesJson && Array.isArray(pAny.cartridgesJson) && pAny.cartridgesJson.length > 0) {
+      const loadedCartridges = pAny.cartridgesJson as CartridgeDef[];
+      const loadedType: PrinterType = pAny.printerType ?? "4-cartridge";
+      setCartridges(loadedCartridges);
+      setPrinterType(loadedType);
+      setCostParams((prev) => ({
+        ...prev,
+        coveragePercent: preset.coveragePercent ?? 5,
+        paperCostPerSheet: preset.paperCostPerSheet ?? 0.01,
+        isDuplex: preset.isDuplex ?? false,
+        printerType: loadedType,
+        cartridges: loadedCartridges,
+      }));
+    } else {
+      // Legacy preset — map CMYK scalar fields to cartridge format
+      const legacyCartridges: CartridgeDef[] = [
+        { id: "cyan",    label: "Cyan",    channels: ["C"], blended: false, price: pAny.cCartridgePrice ?? 0, yield: pAny.cCartridgeYield ?? 0, color: "#06b6d4" },
+        { id: "magenta", label: "Magenta", channels: ["M"], blended: false, price: pAny.mCartridgePrice ?? 0, yield: pAny.mCartridgeYield ?? 0, color: "#ec4899" },
+        { id: "yellow",  label: "Yellow",  channels: ["Y"], blended: false, price: pAny.yCartridgePrice ?? 0, yield: pAny.yCartridgeYield ?? 0, color: "#eab308" },
+        { id: "black",   label: "Black",   channels: ["K"], blended: false, price: pAny.kCartridgePrice ?? 0, yield: pAny.kCartridgeYield ?? 0, color: "#1a1a1a" },
+      ].filter((c) => c.price > 0 || c.yield > 0);
+      const mapped = legacyCartridges.length > 0 ? legacyCartridges : defaultTemplate.cartridges.map((c) => ({ ...c, price: 0, yield: 0 }));
+      setCartridges(mapped);
+      setPrinterType("4-cartridge");
       setCostParams((prev) => ({
         ...prev,
         pricePerCartridge: preset.pricePerCartridge ?? undefined,
@@ -299,7 +310,65 @@ export default function Home() {
         kCartridgeYield: pAny.kCartridgeYield || undefined,
         paperCostPerSheet: preset.paperCostPerSheet ?? 0.01,
         isDuplex: preset.isDuplex ?? false,
+        printerType: "4-cartridge",
+        cartridges: mapped,
       }));
+    }
+    setAppliedTonerName(pAny.cartridgeModel ?? preset.name);
+  };
+
+  const handleSelectPrinter = async (printerId: number, printerModel: string) => {
+    setSelectedPrinterId(printerId);
+    try {
+      const preset = await getPresetByPrinter.mutateAsync({ printerId });
+      if (!preset) { toast.error("No toner preset found for this printer."); return; }
+      const pAny = preset as any;
+      // If preset has flexible cartridge data, use it
+      if (pAny.cartridgesJson && Array.isArray(pAny.cartridgesJson) && pAny.cartridgesJson.length > 0) {
+        const loadedCartridges = pAny.cartridgesJson as CartridgeDef[];
+        const loadedType: PrinterType = pAny.printerType ?? "4-cartridge";
+        setCartridges(loadedCartridges);
+        setPrinterType(loadedType);
+        setCostParams((prev) => ({
+          ...prev,
+          coveragePercent: preset.coveragePercent ?? 5,
+          paperCostPerSheet: preset.paperCostPerSheet ?? 0.01,
+          isDuplex: preset.isDuplex ?? false,
+          printerType: loadedType,
+          cartridges: loadedCartridges,
+        }));
+      } else {
+        // Legacy preset
+        const legacyCartridges: CartridgeDef[] = [
+          { id: "cyan",    label: "Cyan",    channels: ["C"], blended: false, price: pAny.cCartridgePrice ?? 0, yield: pAny.cCartridgeYield ?? 0, color: "#06b6d4" },
+          { id: "magenta", label: "Magenta", channels: ["M"], blended: false, price: pAny.mCartridgePrice ?? 0, yield: pAny.mCartridgeYield ?? 0, color: "#ec4899" },
+          { id: "yellow",  label: "Yellow",  channels: ["Y"], blended: false, price: pAny.yCartridgePrice ?? 0, yield: pAny.yCartridgeYield ?? 0, color: "#eab308" },
+          { id: "black",   label: "Black",   channels: ["K"], blended: false, price: pAny.kCartridgePrice ?? 0, yield: pAny.kCartridgeYield ?? 0, color: "#1a1a1a" },
+        ].filter((c) => c.price > 0 || c.yield > 0);
+        const mapped = legacyCartridges.length > 0 ? legacyCartridges : defaultTemplate.cartridges.map((c) => ({ ...c, price: 0, yield: 0 }));
+        setCartridges(mapped);
+        setPrinterType("4-cartridge");
+        setCostParams((prev) => ({
+          ...prev,
+          pricePerCartridge: preset.pricePerCartridge ?? undefined,
+          yieldPages: preset.yieldPages ?? undefined,
+          coveragePercent: preset.coveragePercent ?? 5,
+          pricePerMl: preset.pricePerMl ?? undefined,
+          mlPerCartridge: preset.mlPerCartridge ?? undefined,
+          cCartridgePrice: pAny.cCartridgePrice || undefined,
+          cCartridgeYield: pAny.cCartridgeYield || undefined,
+          mCartridgePrice: pAny.mCartridgePrice || undefined,
+          mCartridgeYield: pAny.mCartridgeYield || undefined,
+          yCartridgePrice: pAny.yCartridgePrice || undefined,
+          yCartridgeYield: pAny.yCartridgeYield || undefined,
+          kCartridgePrice: pAny.kCartridgePrice || undefined,
+          kCartridgeYield: pAny.kCartridgeYield || undefined,
+          paperCostPerSheet: preset.paperCostPerSheet ?? 0.01,
+          isDuplex: preset.isDuplex ?? false,
+          printerType: "4-cartridge",
+          cartridges: mapped,
+        }));
+      }
       setSelectedPresetId(String(preset.id));
       const tonerName = pAny.cartridgeModel ?? preset.name;
       setAppliedTonerName(tonerName);
@@ -934,92 +1003,29 @@ export default function Home() {
                   </Card>
                 </div>
 
-                {/* Cost inputs */}
+                {/* Flexible Cartridge Config */}
                 <Card>
                   <CardHeader className="pb-3">
                     <CardTitle className="text-base">Ink / Toner Pricing</CardTitle>
                     <CardDescription>
-                      {costParams.colorMode === "rgb"
-                        ? "RGB inkjet mode — enter pricing per Red, Green, and Blue ink cartridge."
-                        : "CMYK mode — enter pricing per Cyan, Magenta, Yellow, and Black cartridge."}
+                      Select your printer type and enter cartridge prices and page yields.
                     </CardDescription>
                   </CardHeader>
-                  <CardContent className="space-y-5">
-
-                    {/* Color mode toggle */}
-                    <div className="flex items-center justify-between rounded-lg border p-3 bg-muted/30">
-                      <div>
-                        <p className="text-sm font-medium">Color Space / Ink Mode</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          {costParams.colorMode === "rgb"
-                            ? "RGB — for photo inkjet printers with R/G/B ink tanks"
-                            : "CMYK — for standard laser/inkjet printers with C/M/Y/K cartridges"}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className={cn("text-xs font-semibold", costParams.colorMode !== "rgb" ? "text-cyan-600" : "text-muted-foreground")}>CMYK</span>
-                        <Switch
-                          checked={costParams.colorMode === "rgb"}
-                          onCheckedChange={(v) => setCostParams((p) => ({ ...p, colorMode: v ? "rgb" : "cmyk" }))}
-                        />
-                        <span className={cn("text-xs font-semibold", costParams.colorMode === "rgb" ? "text-blue-600" : "text-muted-foreground")}>RGB</span>
-                      </div>
-                    </div>
-
-                    {/* Per-channel pricing rows — CMYK or RGB depending on mode */}
-                    {(() => {
-                      const rgbChannels = [
-                        { label: "Red",   color: "#ef4444", priceKey: "rCartridgePrice" as const, yieldKey: "rCartridgeYield" as const },
-                        { label: "Green", color: "#22c55e", priceKey: "gCartridgePrice" as const, yieldKey: "gCartridgeYield" as const },
-                        { label: "Blue",  color: "#3b82f6", priceKey: "bCartridgePrice" as const, yieldKey: "bCartridgeYield" as const },
-                      ];
-                      const cmykChannels = [
-                        { label: "Cyan",    color: "#06b6d4", priceKey: "cCartridgePrice" as const, yieldKey: "cCartridgeYield" as const },
-                        { label: "Magenta", color: "#ec4899", priceKey: "mCartridgePrice" as const, yieldKey: "mCartridgeYield" as const },
-                        { label: "Yellow",  color: "#ca8a04", priceKey: "yCartridgePrice" as const, yieldKey: "yCartridgeYield" as const },
-                        { label: "Black",   color: "#1f2937", priceKey: "kCartridgePrice" as const, yieldKey: "kCartridgeYield" as const },
-                      ];
-                      const channels = costParams.colorMode === "rgb" ? rgbChannels : cmykChannels;
-                      return (
-                    <div className="space-y-3">
-                      <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Per-Colour Cartridge Pricing</p>
-                      {channels.map(({ label, color, priceKey, yieldKey }) => (
-                        <div key={label} className="grid grid-cols-[auto_1fr_1fr] items-center gap-3">
-                          <div className="flex items-center gap-2 w-24">
-                            <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
-                            <span className="text-sm font-medium">{label}</span>
-                          </div>
-                          <div className="space-y-1">
-                            <Label className="text-xs text-muted-foreground">Price per Cartridge ($)</Label>
-                            <Input
-                              type="number" min="0" step="0.01"
-                              placeholder="e.g. 18.99"
-                              value={costParams[priceKey] ?? ""}
-                              onChange={(e) => setCostParams((p) => ({ ...p, [priceKey]: e.target.value ? +e.target.value : undefined }))}
-                            />
-                          </div>
-                          <div className="space-y-1">
-                            <Label className="text-xs text-muted-foreground">Yield (pages)</Label>
-                            <Input
-                              type="number" min="1"
-                              placeholder="e.g. 1500"
-                              value={costParams[yieldKey] ?? ""}
-                              onChange={(e) => setCostParams((p) => ({ ...p, [yieldKey]: e.target.value ? +e.target.value : undefined }))}
-                            />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                      );
-                    })()}
-
-                    {/* RGB info note */}
-                    {costParams.colorMode === "rgb" && (
-                      <div className="rounded-md bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 p-3 text-xs text-blue-700 dark:text-blue-300">
-                        <strong>RGB Mode:</strong> Coverage is calculated directly from the Red, Green, and Blue pixel channels of your image. Ink cost = (R coverage × R rate) + (G coverage × G rate) + (B coverage × B rate). Best suited for photo inkjet printers that use separate R/G/B ink tanks.
-                      </div>
-                    )}
-
+                  <CardContent>
+                    <CartridgeConfig
+                      cartridges={cartridges}
+                      printerType={printerType}
+                      coveragePercent={costParams.coveragePercent}
+                      onChange={(newCartridges, newType) => {
+                        setCartridges(newCartridges);
+                        setPrinterType(newType);
+                        setCostParams((prev) => ({
+                          ...prev,
+                          printerType: newType,
+                          cartridges: newCartridges,
+                        }));
+                      }}
+                    />
                   </CardContent>
                 </Card>
 

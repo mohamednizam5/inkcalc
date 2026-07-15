@@ -297,6 +297,18 @@ export interface CostParams {
   paperCostPerSheet: number;
   isDuplex: boolean;
   copies: number;
+
+  // ── Flexible cartridge system (new — takes priority over legacy fields) ─────
+  printerType?: string;
+  cartridges?: Array<{
+    id: string;
+    label: string;
+    channels: string[];   // e.g. ["C","M","Y"] for tri-colour
+    blended: boolean;     // true = shared reservoir (tri-colour)
+    price: number;
+    yield: number;
+    color?: string;
+  }>;
 }
 
 export interface PageCostResult {
@@ -372,6 +384,92 @@ export function computeCosts(
     ? coveragePercent : 5;
   const safeCopies = (copies && Number.isFinite(copies) && copies >= 1)
     ? Math.round(copies) : 1;
+
+  // ─── Flexible cartridge system ───────────────────────────────────────────────────────
+  if (params.cartridges && params.cartridges.length > 0) {
+    const duplexFactor = isDuplex ? 0.5 : 1;
+    const cartridges = params.cartridges;
+
+    // Build a rate map: channel -> cost per 1% coverage
+    // For blended (tri-colour) cartridges, the cost is split equally across channels
+    const channelRateMap: Record<string, number> = {};
+    for (const cart of cartridges) {
+      const p = safe(cart.price);
+      const y = safe(cart.yield);
+      if (p <= 0 || y <= 0) continue;
+      const ratePerPct = p / (y * safeCoverage);
+      if (cart.blended && cart.channels.length > 1) {
+        // Tri-colour: cost is shared — each channel contributes equally to depletion
+        // We charge the full cartridge cost based on the average of all channels
+        // (the cartridge fails when any channel runs out)
+        for (const ch of cart.channels) {
+          channelRateMap[ch] = (channelRateMap[ch] ?? 0) + ratePerPct;
+        }
+      } else {
+        for (const ch of cart.channels) {
+          channelRateMap[ch] = (channelRateMap[ch] ?? 0) + ratePerPct;
+        }
+      }
+    }
+
+    const perPage: PageCostResult[] = pages.map((pg) => {
+      const c = safe(pg.cCoverage ?? 0);
+      const m = safe(pg.mCoverage ?? 0);
+      const y = safe(pg.yCoverage ?? 0);
+      const k = safe(pg.kCoverage ?? 0);
+      const r = safe(pg.rCoverage ?? 0);
+      const g = safe(pg.gCoverage ?? 0);
+      const b = safe(pg.bCoverage ?? 0);
+      const tac = safe(pg.tac ?? (c + m + y + k));
+
+      const cCost = safe(c * (channelRateMap["C"] ?? 0));
+      const mCost = safe(m * (channelRateMap["M"] ?? 0));
+      const yCost = safe(y * (channelRateMap["Y"] ?? 0));
+      const kCost = safe(k * (channelRateMap["K"] ?? 0));
+      const rCost = safe(r * (channelRateMap["R"] ?? 0));
+      const gCost = safe(g * (channelRateMap["G"] ?? 0));
+      const bCost = safe(b * (channelRateMap["B"] ?? 0));
+
+      const inkCostPerPage = safe(cCost + mCost + yCost + kCost + rCost + gCost + bCost);
+      const paperCostPerPage = safe(paperCostPerSheet * duplexFactor);
+      const totalCostPerPage = safe(inkCostPerPage + paperCostPerPage);
+
+      return {
+        pageNumber: pg.pageNumber,
+        fileId: pg.fileId,
+        cCoverage: c, mCoverage: m, yCoverage: y, kCoverage: k, tac,
+        cCost, mCost, yCost, kCost,
+        rCoverage: r, gCoverage: g, bCoverage: b,
+        rCost, gCost, bCost,
+        inkCostPerPage, paperCostPerPage, totalCostPerPage,
+        colorMode: "cmyk",
+      };
+    });
+
+    const totalInkCost = perPage.reduce((s, p) => s + p.inkCostPerPage, 0) * safeCopies;
+    const totalPaperCost = perPage.reduce((s, p) => s + p.paperCostPerPage, 0) * safeCopies;
+    const totalCost = totalInkCost + totalPaperCost;
+    const costPerCopy = perPage.reduce((s, p) => s + p.totalCostPerPage, 0);
+    const n = pages.length || 1;
+
+    // Build perChannel from the actual cartridges used
+    const perChannel: { channel: string; avgCoverage: number; cost: number }[] = [];
+    for (const cart of cartridges) {
+      const cartCost = cart.channels.reduce((sum, ch) => {
+        const chKey = ch as "C"|"M"|"Y"|"K"|"R"|"G"|"B";
+        const costKey = (chKey.toLowerCase() + "Cost") as keyof PageCostResult;
+        return sum + perPage.reduce((s, p) => s + safe(p[costKey] as number), 0) * safeCopies;
+      }, 0);
+      const avgCov = cart.channels.reduce((sum, ch) => {
+        const covKey = (ch.toLowerCase() + "Coverage") as keyof PageCostResult;
+        return sum + perPage.reduce((s, p) => s + safe(p[covKey] as number), 0) / n;
+      }, 0) / Math.max(1, cart.channels.length);
+      perChannel.push({ channel: cart.label, avgCoverage: avgCov, cost: cartCost });
+    }
+
+    return { perPage, totalInkCost, totalPaperCost, totalCost, costPerCopy, perChannel, colorMode: "cmyk" };
+  }
+  // ─── End flexible cartridge system ─────────────────────────────────────────────────────
 
   // Helper: cost per 1% coverage for a single channel
   // Uses per-channel price if provided, falls back to shared price, then per-mL.
