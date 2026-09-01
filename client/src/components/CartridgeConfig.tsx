@@ -11,6 +11,9 @@ interface CartridgeConfigProps {
   cartridges: CartridgeDef[];
   printerType: PrinterType;
   coveragePercent: number;
+  /** Remaining ink in each cartridge, expressed as 0–100% of a new cartridge. */
+  remainingInkPercent: Record<string, number>;
+  onRemainingInkChange: (cartridgeId: string, percent: number) => void;
   onChange: (cartridges: CartridgeDef[], printerType: PrinterType) => void;
 }
 
@@ -42,6 +45,8 @@ export default function CartridgeConfig({
   cartridges,
   printerType,
   coveragePercent,
+  remainingInkPercent,
+  onRemainingInkChange,
   onChange,
 }: CartridgeConfigProps) {
   const [localType, setLocalType] = useState<PrinterType>(printerType);
@@ -153,9 +158,10 @@ export default function CartridgeConfig({
       {/* Cartridge Rows */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <h4 className="text-sm font-semibold text-gray-700">
-            Cartridge Pricing
-          </h4>
+          <div>
+            <h4 className="text-sm font-semibold text-gray-700">Cartridge Pricing & Remaining Ink</h4>
+            <p className="text-xs text-gray-500 mt-0.5">Set remaining ink from your printer gauge. Use 100% for a new cartridge.</p>
+          </div>
           {localType === "custom" && (
             <button
               type="button"
@@ -243,8 +249,8 @@ export default function CartridgeConfig({
               </div>
             )}
 
-            {/* Price + Yield inputs */}
-            <div className="grid grid-cols-2 gap-3">
+            {/* Price, yield, and remaining ink inputs */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
                 <label className="block text-xs text-gray-500 mb-1">
                   Price per Cartridge ($)
@@ -277,14 +283,36 @@ export default function CartridgeConfig({
                   defaultValue={cart.yield || ""}
                   placeholder="e.g. 400"
                   onChange={(e) => {
-                    const v = parseInt(e.target.value);
+                    const v = parseInt(e.target.value, 10);
                     if (!isNaN(v) && v > 0) updateCartridge(idx, { yield: v });
                   }}
                   onBlur={(e) => {
-                    const v = parseInt(e.target.value);
+                    const v = parseInt(e.target.value, 10);
                     updateCartridge(idx, { yield: isNaN(v) ? 0 : Math.max(1, v) });
                   }}
                   className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">
+                  Remaining Ink (%)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="1"
+                  value={remainingInkPercent[cart.id] ?? 100}
+                  placeholder="100"
+                  onChange={(e) => {
+                    const v = parseFloat(e.target.value);
+                    if (Number.isFinite(v)) onRemainingInkChange(cart.id, Math.min(100, Math.max(0, v)));
+                  }}
+                  onBlur={(e) => {
+                    const v = parseFloat(e.target.value);
+                    onRemainingInkChange(cart.id, Number.isFinite(v) ? Math.min(100, Math.max(0, v)) : 100);
+                  }}
+                  className="w-full px-2.5 py-1.5 text-sm border border-violet-300 bg-violet-50/40 rounded-lg focus:ring-2 focus:ring-violet-500 focus:border-transparent"
                 />
               </div>
             </div>
@@ -303,9 +331,8 @@ export default function CartridgeConfig({
       {localCartridges.some((c) => c.blended) && (
         <div className="text-xs text-gray-500 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
           <strong className="text-amber-700">Tri-colour cartridge:</strong> The colour cartridge
-          covers Cyan, Magenta and Yellow from a single shared reservoir. Its cost is calculated
-          based on the average of C+M+Y ink usage — when any one colour channel runs out, the
-          entire cartridge must be replaced.
+          covers Cyan, Magenta and Yellow from a shared reservoir. Print to Empty uses the same
+          combined colour-coverage model as the cost estimate and keeps a safety reserve.
         </div>
       )}
     </div>

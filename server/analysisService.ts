@@ -309,6 +309,28 @@ export interface CostParams {
     yield: number;
     color?: string;
   }>;
+  /** Remaining usable ink in each cartridge, keyed by cartridge id (0–100%). */
+  remainingInkPercent?: Record<string, number>;
+}
+
+export interface PrintToEmptyCartridgeEstimate {
+  cartridgeId: string;
+  label: string;
+  remainingInkPercent: number;
+  estimatedCompleteCopies: number | null;
+  isLimiting: boolean;
+  status: "ready" | "no-document-ink-use" | "missing-yield";
+}
+
+export interface PrintToEmptyResult {
+  /** Maximum complete copies under the entered remaining-ink levels. */
+  maximumCompleteCopies: number | null;
+  /** Conservative print quantity that preserves a 10% ink reserve. */
+  recommendedCopies: number | null;
+  safetyReservePercent: number;
+  limitingCartridge: { id: string; label: string } | null;
+  cartridgeEstimates: PrintToEmptyCartridgeEstimate[];
+  isReady: boolean;
 }
 
 export interface PageCostResult {
@@ -359,6 +381,7 @@ export function computeCosts(
   costPerCopy: number;
   perChannel: { channel: string; avgCoverage: number; cost: number }[];
   colorMode: "cmyk" | "rgb";
+  printToEmpty: PrintToEmptyResult;
 } {
   const {
     pricePerCartridge, yieldPages, coveragePercent = 5,
@@ -384,6 +407,87 @@ export function computeCosts(
     ? coveragePercent : 5;
   const safeCopies = (copies && Number.isFinite(copies) && copies >= 1)
     ? Math.round(copies) : 1;
+
+  /**
+   * Estimate the number of complete copies that the remaining cartridge ink can
+   * support. Cartridge yield is rated at `safeCoverage` per page, so each
+   * document's accumulated channel coverage is converted into rated-page units.
+   * A blended tri-colour cartridge consumes one shared reservoir across all of
+   * its covered channels, which is represented by their combined coverage.
+   */
+  const getPrintToEmpty = (cartridges: NonNullable<CostParams["cartridges"]>): PrintToEmptyResult => {
+    const safetyReservePercent = 10;
+    const coverageTotals: Record<string, number> = { C: 0, M: 0, Y: 0, K: 0, R: 0, G: 0, B: 0 };
+    for (const page of pages) {
+      coverageTotals.C += safe(page.cCoverage ?? 0);
+      coverageTotals.M += safe(page.mCoverage ?? 0);
+      coverageTotals.Y += safe(page.yCoverage ?? 0);
+      coverageTotals.K += safe(page.kCoverage ?? 0);
+      coverageTotals.R += safe(page.rCoverage ?? 0);
+      coverageTotals.G += safe(page.gCoverage ?? 0);
+      coverageTotals.B += safe(page.bCoverage ?? 0);
+    }
+
+    const estimates = cartridges.map((cart) => {
+      const remaining = Math.min(100, Math.max(0, safe(params.remainingInkPercent?.[cart.id], 100)));
+      const documentCoverage = cart.channels.reduce((sum, channel) => sum + (coverageTotals[channel] ?? 0), 0);
+      const ratedPageUnitsPerCopy = documentCoverage / safeCoverage;
+      const cartridgeYield = safe(cart.yield);
+
+      if (ratedPageUnitsPerCopy <= 0) {
+        return {
+          cartridgeId: cart.id,
+          label: cart.label,
+          remainingInkPercent: remaining,
+          estimatedCompleteCopies: null,
+          isLimiting: false,
+          status: "no-document-ink-use" as const,
+        };
+      }
+
+      if (cartridgeYield <= 0) {
+        return {
+          cartridgeId: cart.id,
+          label: cart.label,
+          remainingInkPercent: remaining,
+          estimatedCompleteCopies: null,
+          isLimiting: false,
+          status: "missing-yield" as const,
+        };
+      }
+
+      return {
+        cartridgeId: cart.id,
+        label: cart.label,
+        remainingInkPercent: remaining,
+        estimatedCompleteCopies: Math.max(0, Math.floor((cartridgeYield * (remaining / 100)) / ratedPageUnitsPerCopy)),
+        isLimiting: false,
+        status: "ready" as const,
+      };
+    });
+
+    const inkUsingCartridges = estimates.filter((estimate) => estimate.status !== "no-document-ink-use");
+    const eligible = estimates.filter((estimate) => estimate.status === "ready" && estimate.estimatedCompleteCopies !== null);
+    const isReady = inkUsingCartridges.length > 0 && eligible.length === inkUsingCartridges.length;
+    const maximumCompleteCopies = isReady
+      ? Math.min(...eligible.map((estimate) => estimate.estimatedCompleteCopies ?? 0))
+      : null;
+    const limiting = maximumCompleteCopies === null
+      ? null
+      : eligible.find((estimate) => estimate.estimatedCompleteCopies === maximumCompleteCopies) ?? null;
+
+    return {
+      maximumCompleteCopies,
+      recommendedCopies: maximumCompleteCopies === null ? null : Math.floor(maximumCompleteCopies * ((100 - safetyReservePercent) / 100)),
+      safetyReservePercent,
+      limitingCartridge: limiting ? { id: limiting.cartridgeId, label: limiting.label } : null,
+      cartridgeEstimates: estimates.map((estimate) => ({
+        ...estimate,
+        isLimiting: limiting?.cartridgeId === estimate.cartridgeId,
+      })),
+      isReady,
+    };
+  };
 
   // ─── Flexible cartridge system ───────────────────────────────────────────────────────
   if (params.cartridges && params.cartridges.length > 0) {
@@ -467,7 +571,16 @@ export function computeCosts(
       perChannel.push({ channel: cart.label, avgCoverage: avgCov, cost: cartCost });
     }
 
-    return { perPage, totalInkCost, totalPaperCost, totalCost, costPerCopy, perChannel, colorMode: "cmyk" };
+    return {
+      perPage,
+      totalInkCost,
+      totalPaperCost,
+      totalCost,
+      costPerCopy,
+      perChannel,
+      colorMode: "cmyk",
+      printToEmpty: getPrintToEmpty(cartridges),
+    };
   }
   // ─── End flexible cartridge system ─────────────────────────────────────────────────────
 
@@ -578,5 +691,18 @@ export function computeCosts(
         { channel: "Black",   avgCoverage: perPage.reduce((s, p) => s + p.kCoverage, 0) / n, cost: perPage.reduce((s, p) => s + (p.kCost ?? 0), 0) * safeCopies },
       ];
 
-  return { perPage, totalInkCost, totalPaperCost, totalCost, costPerCopy, perChannel, colorMode };
+  const legacyCartridges: NonNullable<CostParams["cartridges"]> = colorMode === "rgb"
+    ? [
+        { id: "red", label: "Red", channels: ["R"], blended: false, price: safe(rCartridgePrice), yield: safe(rCartridgeYield) },
+        { id: "green", label: "Green", channels: ["G"], blended: false, price: safe(gCartridgePrice), yield: safe(gCartridgeYield) },
+        { id: "blue", label: "Blue", channels: ["B"], blended: false, price: safe(bCartridgePrice), yield: safe(bCartridgeYield) },
+      ]
+    : [
+        { id: "cyan", label: "Cyan", channels: ["C"], blended: false, price: safe(cCartridgePrice ?? pricePerCartridge), yield: safe(cCartridgeYield ?? yieldPages) },
+        { id: "magenta", label: "Magenta", channels: ["M"], blended: false, price: safe(mCartridgePrice ?? pricePerCartridge), yield: safe(mCartridgeYield ?? yieldPages) },
+        { id: "yellow", label: "Yellow", channels: ["Y"], blended: false, price: safe(yCartridgePrice ?? pricePerCartridge), yield: safe(yCartridgeYield ?? yieldPages) },
+        { id: "black", label: "Black", channels: ["K"], blended: false, price: safe(kCartridgePrice ?? pricePerCartridge), yield: safe(kCartridgeYield ?? yieldPages) },
+      ];
+
+  return { perPage, totalInkCost, totalPaperCost, totalCost, costPerCopy, perChannel, colorMode, printToEmpty: getPrintToEmpty(legacyCartridges) };
 }

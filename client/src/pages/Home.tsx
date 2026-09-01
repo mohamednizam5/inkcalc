@@ -5,7 +5,7 @@ import {
   Upload, FileText, Settings, BarChart3, Download,
   ChevronRight, X, Lock, Unlock, Loader2, CheckCircle2,
   AlertCircle, Copy, ExternalLink, Sparkles, RefreshCw,
-  FileDown, FileArchive, Printer, Layers, Share2
+  FileDown, FileArchive, Printer, Layers, Share2, Gauge, ShieldCheck, CircleAlert
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -68,6 +68,8 @@ interface CostParams {
   // Flexible cartridge system (new — takes priority when present)
   printerType?: PrinterType;
   cartridges?: CartridgeDef[];
+  /** Remaining usable ink per cartridge for Print to Empty (0–100%). */
+  remainingInkPercent?: Record<string, number>;
   paperCostPerSheet: number;
   isDuplex: boolean;
   copies: number;
@@ -103,6 +105,9 @@ export default function Home() {
     defaultTemplate.cartridges.map((c) => ({ ...c, price: 0, yield: 0 }))
   );
   const [printerType, setPrinterType] = useState<PrinterType>("4-cartridge");
+  const [remainingInkPercent, setRemainingInkPercent] = useState<Record<string, number>>(
+    () => Object.fromEntries(defaultTemplate.cartridges.map((cartridge) => [cartridge.id, 100]))
+  );
   const [costParams, setCostParams] = useState<CostParams>({
     coveragePercent: 5,
     paperCostPerSheet: 0.01,
@@ -242,10 +247,14 @@ export default function Home() {
   };
 
   // ─── Cost calculation ──────────────────────────────────────────────────────
-  const handleComputeCosts = async () => {
+  const handleComputeCosts = async (paramsOverride?: CostParams) => {
     if (!sessionId) return;
+    const calculationParams = {
+      ...(paramsOverride ?? costParams),
+      remainingInkPercent,
+    };
     try {
-      const result = await computeCosts.mutateAsync({ sessionId, params: costParams });
+      const result = await computeCosts.mutateAsync({ sessionId, params: calculationParams });
       setCostResults(result);
       setCurrentStep(4);
       setShowDownloadPrompt(false);
@@ -253,14 +262,35 @@ export default function Home() {
         const total = result?.totalCost?.toFixed(4) ?? "0.0000";
         const ink = result?.totalInkCost?.toFixed(4) ?? "0.0000";
         const paper = result?.totalPaperCost?.toFixed(4) ?? "0.0000";
-        const mode = costParams.colorMode === "rgb" ? "RGB" : "CMYK";
-        setAssistantMessage(`Here are your results! Your total job cost is $${total}, made up of $${ink} in ink and $${paper} in paper. Check out the ${mode} breakdown charts below. Would you like to download your results as a PDF report or CSV spreadsheet?`);
+        const mode = calculationParams.colorMode === "rgb" ? "RGB" : "CMYK";
+        const printToEmpty = result?.printToEmpty;
+        const maxCopies = printToEmpty?.maximumCompleteCopies;
+        const printToEmptyMessage = Number.isFinite(maxCopies)
+          ? ` With your entered remaining ink, you can print up to ${maxCopies} complete cop${maxCopies === 1 ? "y" : "ies"} before a cartridge is expected to run out.`
+          : "";
+        setAssistantMessage(`Here are your results! Your total job cost is $${total}, made up of $${ink} in ink and $${paper} in paper. Check out the ${mode} breakdown charts below.${printToEmptyMessage} Would you like to download your results as a PDF report or CSV spreadsheet?`);
         setShowDownloadPrompt(true);
       }, 1200);
       await refetchResults();
     } catch (err: any) {
       toast.error(err.message || "Cost calculation failed");
     }
+  };
+
+  const resetRemainingInk = (items: CartridgeDef[]) => {
+    setRemainingInkPercent(Object.fromEntries(items.map((cartridge) => [cartridge.id, 100])));
+  };
+
+  const handleUseSafePrintQuantity = async () => {
+    const recommendedCopies = costResults?.printToEmpty?.recommendedCopies;
+    if (!Number.isFinite(recommendedCopies) || recommendedCopies < 1) {
+      toast.error("There is not enough remaining ink for a safety-buffered complete copy.");
+      return;
+    }
+    const nextParams = { ...costParams, copies: recommendedCopies };
+    setCostParams(nextParams);
+    toast.success(`Set the job to ${recommendedCopies} safe complete cop${recommendedCopies === 1 ? "y" : "ies"}. Recalculating…`);
+    await handleComputeCosts(nextParams);
   };
 
   const applyPreset = (presetId: string) => {
@@ -274,6 +304,7 @@ export default function Home() {
       const loadedType: PrinterType = pAny.printerType ?? "4-cartridge";
       setCartridges(loadedCartridges);
       setPrinterType(loadedType);
+      resetRemainingInk(loadedCartridges);
       setCostParams((prev) => ({
         ...prev,
         coveragePercent: preset.coveragePercent ?? 5,
@@ -285,14 +316,15 @@ export default function Home() {
     } else {
       // Legacy preset — map CMYK scalar fields to cartridge format
       const legacyCartridges: CartridgeDef[] = [
-        { id: "cyan",    label: "Cyan",    channels: ["C"], blended: false, price: pAny.cCartridgePrice ?? 0, yield: pAny.cCartridgeYield ?? 0, color: "#06b6d4" },
-        { id: "magenta", label: "Magenta", channels: ["M"], blended: false, price: pAny.mCartridgePrice ?? 0, yield: pAny.mCartridgeYield ?? 0, color: "#ec4899" },
-        { id: "yellow",  label: "Yellow",  channels: ["Y"], blended: false, price: pAny.yCartridgePrice ?? 0, yield: pAny.yCartridgeYield ?? 0, color: "#eab308" },
-        { id: "black",   label: "Black",   channels: ["K"], blended: false, price: pAny.kCartridgePrice ?? 0, yield: pAny.kCartridgeYield ?? 0, color: "#1a1a1a" },
+        { id: "cyan",    label: "Cyan",    channels: ["C" as const], blended: false, price: pAny.cCartridgePrice ?? 0, yield: pAny.cCartridgeYield ?? 0, color: "#06b6d4" },
+        { id: "magenta", label: "Magenta", channels: ["M" as const], blended: false, price: pAny.mCartridgePrice ?? 0, yield: pAny.mCartridgeYield ?? 0, color: "#ec4899" },
+        { id: "yellow",  label: "Yellow",  channels: ["Y" as const], blended: false, price: pAny.yCartridgePrice ?? 0, yield: pAny.yCartridgeYield ?? 0, color: "#eab308" },
+        { id: "black",   label: "Black",   channels: ["K" as const], blended: false, price: pAny.kCartridgePrice ?? 0, yield: pAny.kCartridgeYield ?? 0, color: "#1a1a1a" },
       ].filter((c) => c.price > 0 || c.yield > 0);
       const mapped = legacyCartridges.length > 0 ? legacyCartridges : defaultTemplate.cartridges.map((c) => ({ ...c, price: 0, yield: 0 }));
       setCartridges(mapped);
       setPrinterType("4-cartridge");
+      resetRemainingInk(mapped);
       setCostParams((prev) => ({
         ...prev,
         pricePerCartridge: preset.pricePerCartridge ?? undefined,
@@ -340,10 +372,10 @@ export default function Home() {
       } else {
         // Legacy preset
         const legacyCartridges: CartridgeDef[] = [
-          { id: "cyan",    label: "Cyan",    channels: ["C"], blended: false, price: pAny.cCartridgePrice ?? 0, yield: pAny.cCartridgeYield ?? 0, color: "#06b6d4" },
-          { id: "magenta", label: "Magenta", channels: ["M"], blended: false, price: pAny.mCartridgePrice ?? 0, yield: pAny.mCartridgeYield ?? 0, color: "#ec4899" },
-          { id: "yellow",  label: "Yellow",  channels: ["Y"], blended: false, price: pAny.yCartridgePrice ?? 0, yield: pAny.yCartridgeYield ?? 0, color: "#eab308" },
-          { id: "black",   label: "Black",   channels: ["K"], blended: false, price: pAny.kCartridgePrice ?? 0, yield: pAny.kCartridgeYield ?? 0, color: "#1a1a1a" },
+          { id: "cyan",    label: "Cyan",    channels: ["C" as const], blended: false, price: pAny.cCartridgePrice ?? 0, yield: pAny.cCartridgeYield ?? 0, color: "#06b6d4" },
+          { id: "magenta", label: "Magenta", channels: ["M" as const], blended: false, price: pAny.mCartridgePrice ?? 0, yield: pAny.mCartridgeYield ?? 0, color: "#ec4899" },
+          { id: "yellow",  label: "Yellow",  channels: ["Y" as const], blended: false, price: pAny.yCartridgePrice ?? 0, yield: pAny.yCartridgeYield ?? 0, color: "#eab308" },
+          { id: "black",   label: "Black",   channels: ["K" as const], blended: false, price: pAny.kCartridgePrice ?? 0, yield: pAny.kCartridgeYield ?? 0, color: "#1a1a1a" },
         ].filter((c) => c.price > 0 || c.yield > 0);
         const mapped = legacyCartridges.length > 0 ? legacyCartridges : defaultTemplate.cartridges.map((c) => ({ ...c, price: 0, yield: 0 }));
         setCartridges(mapped);
@@ -1016,9 +1048,18 @@ export default function Home() {
                       cartridges={cartridges}
                       printerType={printerType}
                       coveragePercent={costParams.coveragePercent}
+                      remainingInkPercent={remainingInkPercent}
+                      onRemainingInkChange={(cartridgeId, percent) => {
+                        setRemainingInkPercent((previous) => ({ ...previous, [cartridgeId]: percent }));
+                      }}
                       onChange={(newCartridges, newType) => {
                         setCartridges(newCartridges);
                         setPrinterType(newType);
+                        setRemainingInkPercent((previous) => {
+                          const next: Record<string, number> = {};
+                          for (const cartridge of newCartridges) next[cartridge.id] = previous[cartridge.id] ?? 100;
+                          return next;
+                        });
                         setCostParams((prev) => ({
                           ...prev,
                           printerType: newType,
@@ -1105,7 +1146,7 @@ export default function Home() {
                 </Card>
 
                 <Button
-                  onClick={handleComputeCosts}
+                  onClick={() => handleComputeCosts()}
                   disabled={computeCosts.isPending}
                   size="lg"
                   className="w-full"
@@ -1184,6 +1225,119 @@ export default function Home() {
                     </div>
                   )}
                 </div>
+
+                {/* ── Print to Empty ── */}
+                {(() => {
+                  const printToEmpty = costResults?.printToEmpty;
+                  if (!printToEmpty) return null;
+                  const isReady = Boolean(printToEmpty.isReady);
+                  const maximumCopies = printToEmpty.maximumCompleteCopies;
+                  const recommendedCopies = printToEmpty.recommendedCopies;
+                  const isRequestedQuantityTooHigh = isReady
+                    && Number.isFinite(maximumCopies)
+                    && costParams.copies > maximumCopies;
+                  const missingYieldLabels = (printToEmpty.cartridgeEstimates ?? [])
+                    .filter((estimate: any) => estimate.status === "missing-yield")
+                    .map((estimate: any) => estimate.label);
+
+                  return (
+                    <Card className="overflow-hidden border-violet-200 shadow-sm">
+                      <CardHeader className="bg-gradient-to-r from-violet-50 via-indigo-50 to-sky-50 pb-4">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="flex gap-3">
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-600 text-white shadow-sm">
+                              <Gauge className="h-5 w-5" />
+                            </div>
+                            <div>
+                              <CardTitle className="text-lg text-slate-900">Print to Empty</CardTitle>
+                              <CardDescription className="mt-1 max-w-2xl text-slate-600">
+                                Estimate how many <strong>complete copies</strong> of this exact job can print from the remaining ink before a cartridge is expected to run out.
+                              </CardDescription>
+                            </div>
+                          </div>
+                          <Badge variant="outline" className="w-fit border-violet-300 bg-white/80 text-violet-700">
+                            {printToEmpty.safetyReservePercent}% safety reserve
+                          </Badge>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="space-y-5 pt-5">
+                        {isReady ? (
+                          <>
+                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Maximum complete copies</p>
+                                <p className="mt-1 font-mono text-3xl font-bold tabular-nums text-slate-900">{maximumCopies}</p>
+                                <p className="mt-1 text-xs text-slate-500">Estimated until the first cartridge empties</p>
+                              </div>
+                              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Recommended print quantity</p>
+                                <p className="mt-1 font-mono text-3xl font-bold tabular-nums text-emerald-700">{recommendedCopies}</p>
+                                <p className="mt-1 text-xs text-emerald-700/80">Keeps {printToEmpty.safetyReservePercent}% ink in reserve</p>
+                              </div>
+                              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                                <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">Limiting cartridge</p>
+                                <p className="mt-1 text-xl font-bold text-amber-900">{printToEmpty.limitingCartridge?.label ?? "—"}</p>
+                                <p className="mt-1 text-xs text-amber-700/80">This cartridge will run out first</p>
+                              </div>
+                            </div>
+
+                            {isRequestedQuantityTooHigh ? (
+                              <div className="flex flex-col gap-3 rounded-xl border border-rose-200 bg-rose-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+                                <div className="flex gap-2.5 text-sm text-rose-900">
+                                  <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
+                                  <p>Your requested quantity of <strong>{costParams.copies}</strong> copies exceeds the estimated maximum of <strong>{maximumCopies}</strong>. Reduce it to avoid unfinished prints.</p>
+                                </div>
+                                <Button size="sm" onClick={handleUseSafePrintQuantity} disabled={computeCosts.isPending || !recommendedCopies} className="shrink-0 bg-emerald-600 hover:bg-emerald-700">
+                                  <ShieldCheck className="mr-1.5 h-4 w-4" /> Use {recommendedCopies} Safe Copies
+                                </Button>
+                              </div>
+                            ) : (
+                              <div className="flex flex-col gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+                                <div className="flex gap-2.5 text-sm text-emerald-900">
+                                  <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                                  <p>{costParams.copies <= (recommendedCopies ?? 0) ? "Your selected quantity is within the recommended safe limit." : `Your selected quantity is below the theoretical maximum, but ${recommendedCopies} copies is the safety-buffered recommendation.`}</p>
+                                </div>
+                                <Button size="sm" variant="outline" onClick={handleUseSafePrintQuantity} disabled={computeCosts.isPending || !recommendedCopies} className="shrink-0 border-emerald-300 bg-white text-emerald-700 hover:bg-emerald-100">
+                                  Use {recommendedCopies} Safe Copies
+                                </Button>
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <div className="flex gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                            <CircleAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+                            <div>
+                              <p className="font-semibold">Print to Empty needs a page yield for every cartridge used by this job.</p>
+                              <p className="mt-1 text-amber-800/90">{missingYieldLabels.length ? `Add a valid page yield for ${missingYieldLabels.join(", ")}, then calculate again.` : "Enter your cartridge yields and remaining ink levels, then calculate again."}</p>
+                            </div>
+                          </div>
+                        )}
+
+                        <div>
+                          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Remaining-ink estimate by cartridge</p>
+                          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                            {(printToEmpty.cartridgeEstimates ?? []).map((estimate: any) => (
+                              <div key={estimate.cartridgeId} className={cn("rounded-lg border px-3 py-2.5", estimate.isLimiting ? "border-amber-300 bg-amber-50" : "border-slate-200 bg-white")}>
+                                <div className="flex items-center justify-between gap-3">
+                                  <span className="text-sm font-semibold text-slate-800">{estimate.label}</span>
+                                  <span className="text-xs font-medium text-slate-600">{estimate.remainingInkPercent}% remaining</span>
+                                </div>
+                                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100">
+                                  <div className={cn("h-full rounded-full", estimate.isLimiting ? "bg-amber-500" : "bg-violet-500")} style={{ width: `${Math.min(100, Math.max(0, estimate.remainingInkPercent ?? 0))}%` }} />
+                                </div>
+                                <p className="mt-1.5 text-xs text-slate-600">
+                                  {estimate.status === "ready" ? `${estimate.estimatedCompleteCopies} complete copies estimated` : estimate.status === "no-document-ink-use" ? "No ink from this cartridge is used by this job" : "Add a valid page yield to estimate capacity"}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <p className="text-xs leading-relaxed text-muted-foreground">Estimate only: actual yield varies with printer cleaning cycles, print mode, paper, environmental conditions, and cartridge-gauge accuracy. The recommended quantity intentionally retains a {printToEmpty.safetyReservePercent}% ink reserve.</p>
+                      </CardContent>
+                    </Card>
+                  );
+                })()}
 
                 {/* ── PDF Download Banner ── */}
                 <div className="flex items-center justify-between gap-4 rounded-xl border border-red-200 bg-red-50/60 px-5 py-4">

@@ -66,6 +66,8 @@ const costParamsSchema = z.object({
   // Flexible cartridge system (new — takes priority)
   printerType: z.string().optional(),
   cartridges: z.array(cartridgeDefSchema).optional(),
+  // Print to Empty: current usable ink in each cartridge, 0–100%.
+  remainingInkPercent: z.record(z.string(), z.number().min(0).max(100)).optional(),
 });
 
 export const appRouter = router({
