@@ -1,0 +1,15 @@
+# Set INKCALC_DOMAIN to your domain after its DNS A record points to the Oracle VM.
+# Examples: inkcalc.sctdjm.com or inkcalc.example.com
+# With the default value (:80), InkCalc remains available through the VM public IP over HTTP.
+{$INKCALC_DOMAIN::80} {
+  encode zstd gzip
+
+  header {
+    X-Content-Type-Options "nosniff"
+    X-Frame-Options "SAMEORIGIN"
+    Referrer-Policy "strict-origin-when-cross-origin"
+    -Server
+  }
+
+  reverse_proxy app:3000
+}
